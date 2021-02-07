@@ -5,22 +5,50 @@ import (
 	"fmt"
 )
 
+// IfStatement is a conditional branch.  If Test is true, Consequent will be
+// executed, otherwise Alternate.  Alternate may be nil.
 type IfStatement struct {
 	baseStatement
+	Loc        SourceLocation
 	Test       Expression
 	Consequent Statement
 	Alternate  Statement
 }
 
-func (IfStatement) Type() string { return "IfStatement" }
+func (IfStatement) Type() string                { return "IfStatement" }
+func (is IfStatement) Location() SourceLocation { return is.Loc }
+
+func (is IfStatement) IsZero() bool {
+	return is.Loc.IsZero() &&
+		(is.Test == nil || is.Test.IsZero()) &&
+		(is.Consequent == nil || is.Consequent.IsZero()) &&
+		(is.Alternate == nil || is.Alternate.IsZero())
+}
+
+func (is IfStatement) Walk(v Visitor) {
+	if v = v.Visit(is); v != nil {
+		defer v.Visit(nil)
+		if is.Test != nil {
+			is.Test.Walk(v)
+		}
+		if is.Consequent != nil {
+			is.Consequent.Walk(v)
+		}
+		if is.Alternate != nil {
+			is.Alternate.Walk(v)
+		}
+	}
+}
+
+func (is IfStatement) Errors() []error {
+	return nil // TODO
+}
 
 func (is IfStatement) MarshalJSON() ([]byte, error) {
-	x := map[string]interface{}{
-		"type":       is.Type(),
-		"test":       is.Test,
-		"consequent": is.Consequent,
-	}
-	if is.Alternate != nil {
+	x := nodeToMap(is)
+	x["test"] = is.Test
+	x["consequent"] = is.Consequent
+	if is.Alternate != nil && !is.Alternate.IsZero() {
 		x["alternate"] = is.Alternate
 	}
 	return json.Marshal(x)
@@ -29,6 +57,7 @@ func (is IfStatement) MarshalJSON() ([]byte, error) {
 func (is *IfStatement) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type       string          `json:"type"`
+		Loc        SourceLocation  `json:"loc"`
 		Test       json.RawMessage `json:"test"`
 		Consequent json.RawMessage `json:"consequent"`
 		Alternate  json.RawMessage `json:"alternate"`
@@ -38,36 +67,64 @@ func (is *IfStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, is.Type(), x.Type)
 	}
 	if err == nil {
+		is.Loc = x.Loc
 		is.Test, _, err = unmarshalExpression(x.Test)
-	}
-	if err == nil {
-		is.Consequent, _, err = unmarshalStatement(x.Consequent)
-	}
-	if err == nil && len(x.Alternate) > 0 {
-		is.Alternate, _, err = unmarshalStatement(x.Alternate)
+		var err2 error
+		if is.Consequent, _, err2 = unmarshalStatement(x.Consequent); err == nil && err2 != nil {
+			err = err2
+		}
+		if is.Alternate, _, err2 = unmarshalStatement(x.Alternate); err == nil && err2 != nil {
+			err = err2
+		}
 	}
 	return err
 }
 
+// SwitchStatement is a conditional branch, consisting of zero more
+// SwitchCases clauses.
 type SwitchStatement struct {
 	baseStatement
+	Loc          SourceLocation
 	Discriminant Expression
 	Cases        []SwitchCase
 }
 
-func (SwitchStatement) Type() string { return "SwitchStatement" }
+func (SwitchStatement) Type() string                { return "SwitchStatement" }
+func (ss SwitchStatement) Location() SourceLocation { return ss.Loc }
+
+func (ss SwitchStatement) IsZero() bool {
+	return ss.Loc.IsZero() &&
+		(ss.Discriminant == nil || ss.Discriminant.IsZero()) &&
+		len(ss.Cases) > 0
+}
+
+func (ss SwitchStatement) Walk(v Visitor) {
+	if v = v.Visit(ss); v != nil {
+		defer v.Visit(nil)
+		if ss.Discriminant != nil {
+			ss.Discriminant.Walk(v)
+		}
+		for _, sc := range ss.Cases {
+			sc.Walk(v)
+		}
+	}
+}
+
+func (ss SwitchStatement) Errors() []error {
+	return nil // TODO
+}
 
 func (ss SwitchStatement) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":  ss.Type(),
-		"test":  ss.Discriminant,
-		"cases": ss.Cases,
-	})
+	x := nodeToMap(ss)
+	x["test"] = ss.Discriminant
+	x["cases"] = ss.Cases
+	return json.Marshal(x)
 }
 
 func (ss *SwitchStatement) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type         string          `json:"type"`
+		Loc          SourceLocation  `json:"loc"`
 		Discriminant json.RawMessage `json:"test"`
 		Cases        []SwitchCase    `json:"cases"`
 	}
@@ -76,22 +133,50 @@ func (ss *SwitchStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ss.Type(), x.Type)
 	}
 	if err == nil {
+		ss.Loc, ss.Cases = x.Loc, x.Cases
 		ss.Discriminant, _, err = unmarshalExpression(x.Discriminant)
 	}
 	return err
 }
 
+// SwitchCase is a branch of a SwitchStatement.  Consequent is executed if
+// Test evaluates true.
+//
+// If Test is nil, this SwitchCase is the default clause.
 type SwitchCase struct {
+	Loc        SourceLocation
 	Test       Expression
 	Consequent Statement
 }
 
-func (SwitchCase) Type() string { return "SwitchCase" }
+func (SwitchCase) Type() string                { return "SwitchCase" }
+func (sc SwitchCase) Location() SourceLocation { return sc.Loc }
+func (SwitchCase) MinVersion() Version         { return ES5 }
+
+func (sc SwitchCase) IsZero() bool {
+	return sc.Loc.IsZero() &&
+		(sc.Test == nil || sc.Test.IsZero()) &&
+		(sc.Consequent == nil || sc.Consequent.IsZero())
+}
+
+func (sc SwitchCase) Walk(v Visitor) {
+	if v = v.Visit(sc); v != nil {
+		defer v.Visit(nil)
+		if sc.Test != nil {
+			sc.Test.Walk(v)
+		}
+		if sc.Consequent != nil {
+			sc.Consequent.Walk(v)
+		}
+	}
+}
+
+func (sc SwitchCase) Errors() []error {
+	return nil // TODO
+}
 
 func (sc SwitchCase) MarshalJSON() ([]byte, error) {
-	x := map[string]interface{}{
-		"type": sc.Type(),
-	}
+	x := nodeToMap(sc)
 	if sc.Test != nil {
 		x["test"] = sc.Test
 	}
@@ -104,6 +189,7 @@ func (sc SwitchCase) MarshalJSON() ([]byte, error) {
 func (sc *SwitchCase) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type       string          `json:"type"`
+		Loc        SourceLocation  `json:"loc"`
 		Test       json.RawMessage `json:"test"`
 		Consequent json.RawMessage `json:"consequent"`
 	}
@@ -112,6 +198,7 @@ func (sc *SwitchCase) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, sc.Type(), x.Type)
 	}
 	if err == nil && len(x.Test) > 0 {
+		sc.Loc = x.Loc
 		sc.Test, _, err = unmarshalExpression(x.Test)
 	}
 	if err == nil && len(x.Consequent) > 0 {

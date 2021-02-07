@@ -7,26 +7,46 @@ import (
 
 // Directive is a directive from the prologue of a script or function.
 type Directive struct {
+	Loc        SourceLocation
 	Expression Literal
 
 	// Directive is the raw string source of the directive without quotes.
 	Directive string
 }
 
-func (Directive) Type() string            { return "Directive" }
-func (Directive) isDirectiveOrStatement() {}
+func (Directive) Type() string               { return "Directive" }
+func (d Directive) Location() SourceLocation { return d.Loc }
+func (Directive) MinVersion() Version        { return ES5 }
+func (Directive) isDirectiveOrStatement()    {}
+
+func (d Directive) IsZero() bool {
+	return d.Loc.IsZero() &&
+		(d.Expression == nil || d.Expression.IsZero()) &&
+		d.Directive == ""
+}
+
+func (d Directive) Walk(v Visitor) {
+	if v = v.Visit(d); v != nil {
+		defer v.Visit(nil)
+		d.Expression.Walk(v)
+	}
+}
+
+func (d Directive) Errors() []error {
+	return nil // TODO
+}
 
 func (d Directive) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":       d.Type(),
-		"expression": d.Expression,
-		"directive":  d.Directive,
-	})
+	x := nodeToMap(d)
+	x["expression"] = d.Expression
+	x["directive"] = d.Directive
+	return json.Marshal(x)
 }
 
 func (d *Directive) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type       string          `json:"type"`
+		Loc        SourceLocation  `json:"loc"`
 		Expression json.RawMessage `json:"expression"`
 		Directive  string          `json:"directive"`
 	}
@@ -35,10 +55,8 @@ func (d *Directive) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, d.Type(), x.Type)
 	}
 	if err == nil {
-		d.Expression, err = unmarshalLiteral(x.Expression)
-	}
-	if err == nil {
-		d.Directive = x.Directive
+		d.Loc, d.Directive = x.Loc, x.Directive
+		d.Expression, _, err = unmarshalLiteral(x.Expression)
 	}
 	return err
 }

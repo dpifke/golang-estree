@@ -8,7 +8,6 @@ import (
 // Statement is any statement.
 type Statement interface {
 	DirectiveOrStatement
-
 	isStatement()
 }
 
@@ -16,7 +15,9 @@ func unmarshalStatement(m json.RawMessage) (s Statement, match bool, err error) 
 	var x struct {
 		Type string `json:"type"`
 	}
-	if err = json.Unmarshal(m, &x); err == nil {
+	if err = json.Unmarshal(m, &x); err != nil {
+		match = true
+	} else {
 		switch x.Type {
 		case ExpressionStatement{}.Type():
 			var es ExpressionStatement
@@ -28,9 +29,11 @@ func unmarshalStatement(m json.RawMessage) (s Statement, match bool, err error) 
 			var fb FunctionBody
 			s, match, err = fb, true, json.Unmarshal(m, &fb)
 		case EmptyStatement{}.Type():
-			s, match = EmptyStatement{}, true
+			var es EmptyStatement
+			s, match, err = es, true, json.Unmarshal(m, &es)
 		case DebuggerStatement{}.Type():
-			s, match = DebuggerStatement{}, true
+			var ds DebuggerStatement
+			s, match, err = ds, true, json.Unmarshal(m, &ds)
 		case WithStatement{}.Type():
 			var ws WithStatement
 			s, match, err = ws, true, json.Unmarshal(m, &ws)
@@ -82,34 +85,51 @@ func unmarshalStatement(m json.RawMessage) (s Statement, match bool, err error) 
 
 type baseStatement struct{}
 
+func (baseStatement) MinVersion() Version     { return ES5 }
 func (baseStatement) isStatement()            {}
 func (baseStatement) isDirectiveOrStatement() {}
 
-func (bl baseStatement) marshalEmptyJSON(typ string) ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type": typ,
-	})
-}
-
-// ExpressionStatement is an expression statement, i.e., a statement
-// consisting of a single expression.
+// ExpressionStatement is a statement consisting of a single expression.
 type ExpressionStatement struct {
 	baseStatement
+	Loc SourceLocation
 	Expression
 }
 
-func (ExpressionStatement) Type() string { return "ExpressionStatement" }
+func (ExpressionStatement) Type() string                { return "ExpressionStatement" }
+func (es ExpressionStatement) Location() SourceLocation { return es.Loc }
+
+func (es ExpressionStatement) MinVersion() Version {
+	return es.Expression.MinVersion()
+}
+
+func (es ExpressionStatement) IsZero() bool {
+	return es.Loc.IsZero() && (es.Expression == nil || es.Expression.IsZero())
+}
+
+func (es ExpressionStatement) Walk(v Visitor) {
+	if v = v.Visit(es); v != nil {
+		defer v.Visit(nil)
+		if es.Expression != nil {
+			es.Expression.Walk(v)
+		}
+	}
+}
+
+func (es ExpressionStatement) Errors() []error {
+	return nil // TODO
+}
 
 func (es ExpressionStatement) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":       es.Type(),
-		"expression": es.Expression,
-	})
+	x := nodeToMap(es)
+	x["expression"] = es.Expression
+	return json.Marshal(x)
 }
 
 func (es *ExpressionStatement) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type       string          `json:"type"`
+		Loc        SourceLocation  `json:"loc"`
 		Expression json.RawMessage `json:"expression"`
 	}
 	err := json.Unmarshal(b, &x)
@@ -117,6 +137,7 @@ func (es *ExpressionStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, es.Type(), x.Type)
 	}
 	if err == nil {
+		es.Loc = x.Loc
 		es.Expression, _, err = unmarshalExpression(x.Expression)
 	}
 	return err
@@ -126,21 +147,40 @@ func (es *ExpressionStatement) UnmarshalJSON(b []byte) error {
 // surrounded by braces.
 type BlockStatement struct {
 	baseStatement
+	Loc  SourceLocation
 	Body []Statement
 }
 
-func (BlockStatement) Type() string { return "BlockStatement" }
+func (BlockStatement) Type() string                { return "BlockStatement" }
+func (bs BlockStatement) Location() SourceLocation { return bs.Loc }
+
+func (bs BlockStatement) IsZero() bool {
+	return false // an empty Body is non-zero
+}
+
+func (bs BlockStatement) Walk(v Visitor) {
+	if v = v.Visit(bs); v != nil {
+		defer v.Visit(nil)
+		for _, b := range bs.Body {
+			b.Walk(v)
+		}
+	}
+}
+
+func (bs BlockStatement) Errors() []error {
+	return nil // TODO
+}
 
 func (bs BlockStatement) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":       bs.Type(),
-		"expression": bs.Body,
-	})
+	x := nodeToMap(bs)
+	x["body"] = bs.Body
+	return json.Marshal(x)
 }
 
 func (bs *BlockStatement) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type string            `json:"type"`
+		Loc  SourceLocation    `json:"loc"`
 		Body []json.RawMessage `json:"body"`
 	}
 	err := json.Unmarshal(b, &x)
@@ -148,10 +188,12 @@ func (bs *BlockStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, bs.Type(), x.Type)
 	}
 	if err == nil {
+		bs.Loc = x.Loc
 		bs.Body = make([]Statement, len(x.Body))
 		for i := range x.Body {
-			if bs.Body[i], _, err = unmarshalStatement(x.Body[i]); err != nil {
-				break
+			var err2 error
+			if bs.Body[i], _, err2 = unmarshalStatement(x.Body[i]); err == nil && err2 != nil {
+				err = err2
 			}
 		}
 	}
@@ -162,21 +204,40 @@ func (bs *BlockStatement) UnmarshalJSON(b []byte) error {
 // begin with directives.
 type FunctionBody struct {
 	baseStatement
+	Loc  SourceLocation
 	Body []DirectiveOrStatement
 }
 
-func (FunctionBody) Type() string { return BlockStatement{}.Type() }
+func (FunctionBody) Type() string                { return BlockStatement{}.Type() }
+func (fb FunctionBody) Location() SourceLocation { return fb.Loc }
+
+func (fb FunctionBody) IsZero() bool {
+	return fb.Loc.IsZero() && len(fb.Body) == 0
+}
+
+func (fb FunctionBody) Walk(v Visitor) {
+	if v = v.Visit(fb); v != nil {
+		defer v.Visit(nil)
+		for _, b := range fb.Body {
+			b.Walk(v)
+		}
+	}
+}
+
+func (fb FunctionBody) Errors() []error {
+	return nil // TODO
+}
 
 func (fb FunctionBody) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":       fb.Type(),
-		"expression": fb.Body,
-	})
+	x := nodeToMap(fb)
+	x["body"] = fb.Body
+	return json.Marshal(x)
 }
 
 func (fb *FunctionBody) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type string            `json:"type"`
+		Loc  SourceLocation    `json:"loc"`
 		Body []json.RawMessage `json:"body"`
 	}
 	err := json.Unmarshal(b, &x)
@@ -184,10 +245,12 @@ func (fb *FunctionBody) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, fb.Type(), x.Type)
 	}
 	if err == nil {
+		fb.Loc = x.Loc
 		fb.Body = make([]DirectiveOrStatement, len(x.Body))
 		for i := range x.Body {
-			if fb.Body[i], err = unmarshalDirectiveOrStatement(x.Body[i]); err != nil {
-				break
+			var err2 error
+			if fb.Body[i], err2 = unmarshalDirectiveOrStatement(x.Body[i]); err == nil && err2 != nil {
+				err = err2
 			}
 		}
 	}
@@ -197,45 +260,119 @@ func (fb *FunctionBody) UnmarshalJSON(b []byte) error {
 // EmptyStatement is an empty statement, i.e., a solitary semicolon.
 type EmptyStatement struct {
 	baseStatement
+	Loc SourceLocation
 }
 
-func (EmptyStatement) Type() string { return "EmptyStatement" }
+func (EmptyStatement) Type() string                { return "EmptyStatement" }
+func (es EmptyStatement) Location() SourceLocation { return es.Loc }
+func (EmptyStatement) IsZero() bool                { return false }
+func (EmptyStatement) Errors() []error             { return nil }
+
+func (es EmptyStatement) Walk(v Visitor) {
+	if v = v.Visit(es); v != nil {
+		v.Visit(nil)
+	}
+}
 
 func (es EmptyStatement) MarshalJSON() ([]byte, error) {
-	return es.marshalEmptyJSON(es.Type())
+	return json.Marshal(nodeToMap(es))
+}
+
+func (es *EmptyStatement) UnmarshalJSON(b []byte) error {
+	var x struct {
+		Type string         `json:"type"`
+		Loc  SourceLocation `json:"loc"`
+	}
+	err := json.Unmarshal(b, &x)
+	if err == nil && x.Type != es.Type() {
+		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, es.Type(), x.Type)
+	}
+	if err == nil {
+		es.Loc = x.Loc
+	}
+	return err
 }
 
 // DebuggerStatement is a debugger statement.
 type DebuggerStatement struct {
 	baseStatement
+	Loc SourceLocation
 }
 
-func (DebuggerStatement) Type() string { return "DebuggerStatement" }
+func (DebuggerStatement) Type() string                { return "DebuggerStatement" }
+func (ds DebuggerStatement) Location() SourceLocation { return ds.Loc }
+func (DebuggerStatement) IsZero() bool                { return false }
+func (DebuggerStatement) Errors() []error             { return nil }
+
+func (ds DebuggerStatement) Walk(v Visitor) {
+	if v = v.Visit(ds); v != nil {
+		v.Visit(nil)
+	}
+}
 
 func (ds DebuggerStatement) MarshalJSON() ([]byte, error) {
-	return ds.marshalEmptyJSON(ds.Type())
+	return json.Marshal(nodeToMap(ds))
+}
+
+func (ds *DebuggerStatement) UnmarshalJSON(b []byte) error {
+	var x struct {
+		Type string         `json:"type"`
+		Loc  SourceLocation `json:"loc"`
+	}
+	err := json.Unmarshal(b, &x)
+	if err == nil && x.Type != ds.Type() {
+		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ds.Type(), x.Type)
+	}
+	if err == nil {
+		ds.Loc = x.Loc
+	}
+	return err
 }
 
 // WithStatement is a with statement.
 type WithStatement struct {
 	baseStatement
+	Loc    SourceLocation
 	Object Expression
 	Body   Statement
 }
 
-func (WithStatement) Type() string { return "WithStatement" }
+func (WithStatement) Type() string                { return "WithStatement" }
+func (ws WithStatement) Location() SourceLocation { return ws.Loc }
+
+func (ws WithStatement) IsZero() bool {
+	return ws.Loc.IsZero() &&
+		(ws.Object == nil || ws.Object.IsZero()) &&
+		(ws.Body == nil || ws.Body.IsZero())
+}
+
+func (ws WithStatement) Walk(v Visitor) {
+	if v = v.Visit(ws); v != nil {
+		defer v.Visit(nil)
+		if ws.Object != nil {
+			ws.Object.Walk(v)
+		}
+		if ws.Body != nil {
+			ws.Body.Walk(v)
+		}
+	}
+}
+
+func (ws WithStatement) Errors() []error {
+	return nil // TODO
+}
 
 func (ws WithStatement) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":   ws.Type(),
-		"object": ws.Object,
-		"body":   ws.Body,
-	})
+	x := nodeToMap(ws)
+	x["object"] = ws.Object
+	x["body"] = ws.Body
+	return json.Marshal(x)
 }
 
 func (ws *WithStatement) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type   string          `json:"type"`
+		Loc    SourceLocation  `json:"loc"`
 		Object json.RawMessage `json:"object"`
 		Body   json.RawMessage `json:"body"`
 	}
@@ -244,6 +381,7 @@ func (ws *WithStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ws.Type(), x.Type)
 	}
 	if err == nil {
+		ws.Loc = x.Loc
 		ws.Object, _, err = unmarshalExpression(x.Object)
 	}
 	if err == nil {

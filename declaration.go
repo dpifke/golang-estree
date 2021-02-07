@@ -5,9 +5,11 @@ import (
 	"fmt"
 )
 
+// Declaration is any declaration node.  Note that declarations are considered
+// statements; this is because declarations can appear in any statement
+// context.
 type Declaration interface {
 	Statement
-
 	isDeclaration()
 }
 
@@ -15,29 +17,49 @@ type baseDeclaration struct {
 	baseStatement
 }
 
-func (baseDeclaration) isDeclaration() {}
+func (baseDeclaration) MinVersion() Version { return ES5 }
+func (baseDeclaration) isDeclaration()      {}
 
+// FunctionDeclaration declares a function. Note that unlike in the parent
+// interface Function, ID cannot be nil.
 type FunctionDeclaration struct {
 	baseDeclaration
+	Loc    SourceLocation
 	ID     Identifier
 	Params []Pattern
 	Body   FunctionBody
 }
 
-func (FunctionDeclaration) Type() string { return "FunctionDelaration" }
+func (FunctionDeclaration) Type() string                { return "FunctionDelaration" }
+func (fd FunctionDeclaration) Location() SourceLocation { return fd.Loc }
+
+func (fd FunctionDeclaration) IsZero() bool {
+	return fd.Loc.IsZero() && fd.ID.IsZero()
+}
+
+func (fd FunctionDeclaration) Walk(v Visitor) {
+	if v = v.Visit(fd); v != nil {
+		defer v.Visit(nil)
+		fd.ID.Walk(v)
+	}
+}
+
+func (fd FunctionDeclaration) Errors() []error {
+	return nil // TODO
+}
 
 func (fd FunctionDeclaration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":   fd.Type(),
-		"id":     fd.ID,
-		"params": fd.Params,
-		"body":   fd.Body,
-	})
+	x := nodeToMap(fd)
+	x["id"] = fd.ID
+	x["params"] = fd.Params
+	x["body"] = fd.Body
+	return json.Marshal(x)
 }
 
 func (fd *FunctionDeclaration) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type   string            `json:"type"`
+		Loc    SourceLocation    `json:"loc"`
 		ID     Identifier        `json:"id"`
 		Params []json.RawMessage `json:"params"`
 		Body   FunctionBody      `json:"body"`
@@ -55,14 +77,15 @@ func (fd *FunctionDeclaration) UnmarshalJSON(b []byte) error {
 		}
 	}
 	if err == nil {
-		fd.ID, fd.Body = x.ID, x.Body
+		fd.Loc, fd.ID, fd.Body = x.Loc, x.ID, x.Body
 	}
 	return err
 }
 
+// VariableDeclarationOrExpression is used where a Node can be either a
+// VariableDeclaration, or any implementation of Expression.
 type VariableDeclarationOrExpression interface {
 	Node
-
 	isVariableDeclarationOrExpression()
 }
 
@@ -88,9 +111,10 @@ func unmarshalVariableDeclarationOrExpression(m json.RawMessage) (VariableDeclar
 	return nil, err
 }
 
+// VariableDeclarationOrPattern is used where a Node can be either a
+// VariableDeclaration, or any implementation of Pattern.
 type VariableDeclarationOrPattern interface {
 	Node
-
 	isVariableDeclarationOrPattern()
 }
 
@@ -115,6 +139,7 @@ func unmarshalVariableDeclarationOrPattern(m json.RawMessage) (VariableDeclarati
 	return nil, err
 }
 
+// VariableDeclarationKind is the kind of VariableDeclaration.
 type VariableDeclarationKind string
 
 var (
@@ -122,33 +147,57 @@ var (
 )
 
 func (vdk VariableDeclarationKind) GoString() string {
-	if vdk == "Var" {
+	if vdk == Var {
 		return "Var"
 	}
 	return fmt.Sprintf("%q", vdk)
 }
 
+func (vdk VariableDeclarationKind) IsValid() bool {
+	return vdk == Var
+}
+
+// VariableDeclaration is a group of VariableDeclarators.
 type VariableDeclaration struct {
 	baseDeclaration
+	Loc          SourceLocation
 	Declarations []VariableDeclarator
 	Kind         VariableDeclarationKind
 }
 
+func (vd VariableDeclaration) IsZero() bool {
+	return vd.Loc.IsZero() && len(vd.Declarations) == 0 && vd.Kind == ""
+}
+
 func (VariableDeclaration) Type() string                       { return "VariableDelaration" }
+func (vd VariableDeclaration) Location() SourceLocation        { return vd.Loc }
 func (VariableDeclaration) isVariableDeclarationOrExpression() {}
 func (VariableDeclaration) isVariableDeclarationOrPattern()    {}
 
+func (vd VariableDeclaration) Walk(v Visitor) {
+	if v = v.Visit(vd); v != nil {
+		defer v.Visit(nil)
+		for i := range vd.Declarations {
+			vd.Declarations[i].Walk(v)
+		}
+	}
+}
+
+func (vd VariableDeclaration) Errors() []error {
+	return nil // TODO
+}
+
 func (vd VariableDeclaration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":         vd.Type(),
-		"declarations": vd.Declarations,
-		"kind":         vd,
-	})
+	x := nodeToMap(vd)
+	x["declarations"] = vd.Declarations
+	x["kind"] = vd
+	return json.Marshal(x)
 }
 
 func (vd *VariableDeclaration) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type         string                  `json:"type"`
+		Loc          SourceLocation          `json:"loc"`
 		Declarations []VariableDeclarator    `json:"declarations"`
 		Kind         VariableDeclarationKind `json:"kind"`
 	}
@@ -157,7 +206,8 @@ func (vd *VariableDeclaration) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, vd.Type(), x.Type)
 	}
 	if err == nil {
-		if x.Kind == Var {
+		vd.Loc, vd.Declarations = x.Loc, x.Declarations
+		if x.Kind.IsValid() {
 			vd.Kind = x.Kind
 		} else {
 			err = fmt.Errorf("invalid VariableDeclaration.Kind %q", x.Kind)
@@ -166,18 +216,41 @@ func (vd *VariableDeclaration) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// VariableDeclarator defines a new variable identified by ID, optionally
+// initialized to the result of Init.
 type VariableDeclarator struct {
+	Loc  SourceLocation
 	ID   Pattern
 	Init Expression
 }
 
-func (VariableDeclarator) Type() string { return "VariableDelarator" }
+func (VariableDeclarator) Type() string                { return "VariableDelarator" }
+func (vd VariableDeclarator) Location() SourceLocation { return vd.Loc }
+func (VariableDeclarator) MinVersion() Version         { return ES5 }
+
+func (vd VariableDeclarator) IsZero() bool {
+	return vd.Loc.IsZero() &&
+		(vd.ID == nil || vd.ID.IsZero()) &&
+		(vd.Init == nil || vd.Init.IsZero())
+}
+
+func (vd VariableDeclarator) Walk(v Visitor) {
+	if v = v.Visit(vd); v != nil {
+		defer v.Visit(nil)
+		vd.ID.Walk(v)
+		if vd.Init != nil {
+			vd.Init.Walk(v)
+		}
+	}
+}
+
+func (vd VariableDeclarator) Errors() []error {
+	return nil // TODO
+}
 
 func (vd VariableDeclarator) MarshalJSON() ([]byte, error) {
-	x := map[string]interface{}{
-		"type": vd.Type(),
-		"id":   vd.ID,
-	}
+	x := nodeToMap(vd)
+	x["id"] = vd.ID
 	if vd.Init != nil {
 		x["init"] = vd.Init
 	}
@@ -187,6 +260,7 @@ func (vd VariableDeclarator) MarshalJSON() ([]byte, error) {
 func (vd *VariableDeclarator) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type string          `json:"type"`
+		Loc  SourceLocation  `json:"loc"`
 		ID   json.RawMessage `json:"id"`
 		Init json.RawMessage `json:"init"`
 	}
@@ -195,10 +269,14 @@ func (vd *VariableDeclarator) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, vd.Type(), x.Type)
 	}
 	if err == nil {
+		vd.Loc = x.Loc
 		vd.ID, _, err = unmarshalPattern(x.ID)
-	}
-	if err == nil && len(x.Init) > 0 {
-		vd.Init, _, err = unmarshalExpression(x.Init)
+		if len(x.Init) > 0 {
+			var err2 error
+			if vd.Init, _, err2 = unmarshalExpression(x.Init); err == nil && err2 != nil {
+				err = err2
+			}
+		}
 	}
 	return err
 }

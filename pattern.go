@@ -8,7 +8,6 @@ import (
 
 type Pattern interface {
 	Node
-
 	isPattern()
 	isVariableDeclarationOrPattern()
 	isPatternOrExpression()
@@ -28,7 +27,6 @@ func unmarshalPattern(m json.RawMessage) (Pattern, bool, error) {
 
 type PatternOrExpression interface {
 	Node
-
 	isPatternOrExpression()
 }
 
@@ -42,8 +40,12 @@ func unmarshalPatternOrExpression(m json.RawMessage) (PatternOrExpression, error
 	return nil, fmt.Errorf("%w: expected Pattern or Expression, got %v", ErrWrongType, string(m))
 }
 
-type basePattern struct{}
+type basePattern struct {
+	loc SourceLocation
+}
 
+func (p basePattern) Loc() *SourceLocation          { return &p.loc }
+func (basePattern) MinVersion() Version             { return ES5 }
 func (basePattern) isPattern()                      {}
 func (basePattern) isVariableDeclarationOrPattern() {}
 func (basePattern) isPatternOrExpression()          {}

@@ -5,11 +5,13 @@ import (
 	"fmt"
 )
 
+// UnaryOperator is the operator token of an UnaryExpression, which modifies a
+// single operand.
 type UnaryOperator string
 
 var (
-	Negative   UnaryOperator = "-"
-	ToNumber   UnaryOperator = "+"
+	Minus      UnaryOperator = "-"
+	Plus       UnaryOperator = "+"
 	Not        UnaryOperator = "!"
 	BitwiseNot UnaryOperator = "~"
 	TypeOf     UnaryOperator = "typeof"
@@ -19,10 +21,10 @@ var (
 
 func (uo UnaryOperator) GoString() string {
 	switch uo {
-	case Negative:
-		return "Negative"
-	case ToNumber:
-		return "ToNumber"
+	case Minus:
+		return "Minus"
+	case Plus:
+		return "Plus"
 	case Not:
 		return "Not"
 	case BitwiseNot:
@@ -37,28 +39,58 @@ func (uo UnaryOperator) GoString() string {
 	return fmt.Sprintf("%q", uo)
 }
 
+func (uo UnaryOperator) IsValid() bool {
+	switch uo {
+	case Minus, Plus, Not, BitwiseNot, TypeOf, Void, Delete:
+		return true
+	}
+	return false
+}
+
+// UnaryExpression is an expression modifying a single operand.
 type UnaryExpression struct {
 	baseExpression
+	Loc      SourceLocation
 	Operator UnaryOperator
 	Prefix   bool
 	Argument Expression
 }
 
-func (UnaryExpression) Type() string { return "UnaryExpression" }
+func (UnaryExpression) Type() string                { return "UnaryExpression" }
+func (ue UnaryExpression) Location() SourceLocation { return ue.Loc }
+
+func (ue UnaryExpression) IsZero() bool {
+	return ue.Loc.IsZero() &&
+		ue.Operator == "" &&
+		(ue.Argument == nil || ue.Argument.IsZero())
+}
+
+func (ue UnaryExpression) Walk(v Visitor) {
+	if v = v.Visit(ue); v != nil {
+		defer v.Visit(nil)
+		if ue.Argument != nil {
+			ue.Argument.Walk(v)
+		}
+	}
+}
+
+func (ue UnaryExpression) Errors() []error {
+	return nil // TODO
+}
 
 func (ue UnaryExpression) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":     ue.Type(),
-		"operator": ue.Operator,
-		"prefix":   ue.Prefix,
-		"Argument": ue.Argument,
-	})
+	x := nodeToMap(ue)
+	x["operator"] = ue.Operator
+	x["prefix"] = ue.Prefix
+	x["argument"] = ue.Argument
+	return json.Marshal(x)
 }
 
 func (ue *UnaryExpression) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type     string          `json:"type"`
-		Operator UnaryOperator   `json:"type"`
+		Loc      SourceLocation  `json:"loc"`
+		Operator UnaryOperator   `json:"operator"`
 		Prefix   bool            `json:"prefix"`
 		Argument json.RawMessage `json:"argument"`
 	}
@@ -67,19 +99,22 @@ func (ue *UnaryExpression) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ue.Type(), x.Type)
 	}
 	if err == nil {
-		switch x.Operator {
-		case Negative, ToNumber, Not, BitwiseNot, TypeOf, Void, Delete:
+		ue.Loc, ue.Prefix = x.Loc, x.Prefix
+		if x.Operator.IsValid() {
 			ue.Operator = x.Operator
-		default:
+		} else {
 			err = fmt.Errorf("%w for UnaryExpression.Operator: %q", ErrWrongValue, x.Operator)
 		}
-	}
-	if err == nil {
-		ue.Argument, _, err = unmarshalExpression(x.Argument)
+		var err2 error
+		if ue.Argument, _, err = unmarshalExpression(x.Argument); err == nil && err2 != nil {
+			err = err2
+		}
 	}
 	return err
 }
 
+// UpdateOperator is the operator token of an UpdateExpression, which modifies
+// a single operand in-place.
 type UpdateOperator string
 
 var (
@@ -97,28 +132,58 @@ func (uo UpdateOperator) GoString() string {
 	return fmt.Sprintf("%q", uo)
 }
 
+func (uo UpdateOperator) IsValid() bool {
+	switch uo {
+	case Increment, Decrement:
+		return true
+	}
+	return false
+}
+
+// UpdateExpression is an expression which modifies a single operand in-place.
 type UpdateExpression struct {
 	baseExpression
+	Loc      SourceLocation
 	Operator UpdateOperator
 	Argument Expression
 	Prefix   bool
 }
 
-func (UpdateExpression) Type() string { return "UpdateExpression" }
+func (UpdateExpression) Type() string                { return "UpdateExpression" }
+func (ue UpdateExpression) Location() SourceLocation { return ue.Loc }
+
+func (ue UpdateExpression) IsZero() bool {
+	return ue.Loc.IsZero() &&
+		ue.Operator == "" &&
+		(ue.Argument == nil || ue.Argument.IsZero())
+}
+
+func (ue UpdateExpression) Walk(v Visitor) {
+	if v = v.Visit(ue); v != nil {
+		defer v.Visit(nil)
+		if ue.Argument != nil {
+			ue.Argument.Walk(v)
+		}
+	}
+}
+
+func (ue UpdateExpression) Errors() []error {
+	return nil // TODO
+}
 
 func (ue UpdateExpression) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":     ue.Type(),
-		"operator": ue.Operator,
-		"Argument": ue.Argument,
-		"prefix":   ue.Prefix,
-	})
+	x := nodeToMap(ue)
+	x["operator"] = ue.Operator
+	x["argument"] = ue.Argument
+	x["prefix"] = ue.Prefix
+	return json.Marshal(x)
 }
 
 func (ue *UpdateExpression) UnmarshalJSON(b []byte) error {
 	var x struct {
 		Type     string          `json:"type"`
-		Operator UpdateOperator  `json:"type"`
+		Loc      SourceLocation  `json:"loc"`
+		Operator UpdateOperator  `json:"operator"`
 		Argument json.RawMessage `json:"argument"`
 		Prefix   bool            `json:"prefix"`
 	}
@@ -127,15 +192,16 @@ func (ue *UpdateExpression) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ue.Type(), x.Type)
 	}
 	if err == nil {
-		switch x.Operator {
-		case Increment, Decrement:
+		ue.Loc, ue.Prefix = x.Loc, x.Prefix
+		if x.Operator.IsValid() {
 			ue.Operator = x.Operator
-		default:
+		} else {
 			err = fmt.Errorf("%w for UnaryExpression.Operator: %q", ErrWrongValue, x.Operator)
 		}
-	}
-	if err == nil {
-		ue.Argument, _, err = unmarshalExpression(x.Argument)
+		var err2 error
+		if ue.Argument, _, err2 = unmarshalExpression(x.Argument); err == nil && err2 != nil {
+			err = err2
+		}
 	}
 	return err
 }
