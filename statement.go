@@ -12,102 +12,72 @@ type Statement interface {
 	isStatement()
 }
 
-func unmarshalStatement(m json.RawMessage) (Statement, error) {
+func unmarshalStatement(m json.RawMessage) (s Statement, match bool, err error) {
 	var x struct {
 		Type string `json:"type"`
 	}
-	err := json.Unmarshal(m, &x)
-	if err == nil {
+	if err = json.Unmarshal(m, &x); err == nil {
 		switch x.Type {
 		case ExpressionStatement{}.Type():
 			var es ExpressionStatement
-			if err = json.Unmarshal(m, &es); err == nil {
-				return es, nil
-			}
+			s, match, err = es, true, json.Unmarshal(m, &es)
 		case BlockStatement{}.Type():
 			var bs BlockStatement
-			if err = json.Unmarshal(m, &bs); err == nil {
-				return bs, nil
-			}
+			s, match, err = bs, true, json.Unmarshal(m, &bs)
 		case FunctionBody{}.Type():
 			var fb FunctionBody
-			if err = json.Unmarshal(m, &fb); err == nil {
-				return fb, nil
-			}
+			s, match, err = fb, true, json.Unmarshal(m, &fb)
 		case EmptyStatement{}.Type():
-			return EmptyStatement{}, nil
+			s, match = EmptyStatement{}, true
 		case DebuggerStatement{}.Type():
-			return DebuggerStatement{}, nil
+			s, match = DebuggerStatement{}, true
 		case WithStatement{}.Type():
 			var ws WithStatement
-			if err = json.Unmarshal(m, &ws); err == nil {
-				return ws, nil
-			}
+			s, match, err = ws, true, json.Unmarshal(m, &ws)
 		case ReturnStatement{}.Type():
 			var rs ReturnStatement
-			if err = json.Unmarshal(m, &rs); err == nil {
-				return rs, nil
-			}
+			s, match, err = rs, true, json.Unmarshal(m, &rs)
 		case LabeledStatement{}.Type():
 			var ls LabeledStatement
-			if err = json.Unmarshal(m, &ls); err == nil {
-				return ls, nil
-			}
+			s, match, err = ls, true, json.Unmarshal(m, &ls)
 		case BreakStatement{}.Type():
 			var bs BreakStatement
-			if err = json.Unmarshal(m, &bs); err == nil {
-				return bs, nil
-			}
+			s, match, err = bs, true, json.Unmarshal(m, &bs)
 		case ContinueStatement{}.Type():
 			var cs ContinueStatement
-			if err = json.Unmarshal(m, &cs); err == nil {
-				return cs, nil
-			}
+			s, match, err = cs, true, json.Unmarshal(m, &cs)
 		case IfStatement{}.Type():
 			var is IfStatement
-			if err = json.Unmarshal(m, &is); err == nil {
-				return is, nil
-			}
+			s, match, err = is, true, json.Unmarshal(m, &is)
 		case SwitchStatement{}.Type():
 			var ss SwitchStatement
-			if err = json.Unmarshal(m, &ss); err == nil {
-				return ss, nil
-			}
+			s, match, err = ss, true, json.Unmarshal(m, &ss)
 		case ThrowStatement{}.Type():
 			var ts ThrowStatement
-			if err = json.Unmarshal(m, &ts); err == nil {
-				return ts, nil
-			}
+			s, match, err = ts, true, json.Unmarshal(m, &ts)
 		case TryStatement{}.Type():
 			var ts TryStatement
-			if err = json.Unmarshal(m, &ts); err == nil {
-				return ts, nil
-			}
+			s, match, err = ts, true, json.Unmarshal(m, &ts)
 		case WhileStatement{}.Type():
 			var ws WhileStatement
-			if err = json.Unmarshal(m, &ws); err == nil {
-				return ws, nil
-			}
+			s, match, err = ws, true, json.Unmarshal(m, &ws)
 		case DoWhileStatement{}.Type():
 			var dws DoWhileStatement
-			if err = json.Unmarshal(m, &dws); err == nil {
-				return dws, nil
-			}
+			s, match, err = dws, true, json.Unmarshal(m, &dws)
 		case ForStatement{}.Type():
 			var fs ForStatement
-			if err = json.Unmarshal(m, &fs); err == nil {
-				return fs, nil
-			}
+			s, match, err = fs, true, json.Unmarshal(m, &fs)
 		case ForInStatement{}.Type():
 			var fis ForInStatement
-			if err = json.Unmarshal(m, &fis); err == nil {
-				return fis, nil
-			}
+			s, match, err = fis, true, json.Unmarshal(m, &fis)
 		default:
 			err = fmt.Errorf("%w: expected Statement, got %v", ErrWrongType, string(m))
 		}
+		if err != nil {
+			s = nil // don't return incomplete objects
+		}
 	}
-	return nil, err
+	return
 }
 
 type baseStatement struct{}
@@ -147,7 +117,7 @@ func (es *ExpressionStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, es.Type(), x.Type)
 	}
 	if err == nil {
-		es.Expression, err = unmarshalExpression(x.Expression)
+		es.Expression, _, err = unmarshalExpression(x.Expression)
 	}
 	return err
 }
@@ -180,7 +150,7 @@ func (bs *BlockStatement) UnmarshalJSON(b []byte) error {
 	if err == nil {
 		bs.Body = make([]Statement, len(x.Body))
 		for i := range x.Body {
-			if bs.Body[i], err = unmarshalStatement(x.Body[i]); err != nil {
+			if bs.Body[i], _, err = unmarshalStatement(x.Body[i]); err != nil {
 				break
 			}
 		}
@@ -274,10 +244,10 @@ func (ws *WithStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ws.Type(), x.Type)
 	}
 	if err == nil {
-		ws.Object, err = unmarshalExpression(x.Object)
+		ws.Object, _, err = unmarshalExpression(x.Object)
 	}
 	if err == nil {
-		ws.Body, err = unmarshalStatement(x.Body)
+		ws.Body, _, err = unmarshalStatement(x.Body)
 	}
 	return err
 }

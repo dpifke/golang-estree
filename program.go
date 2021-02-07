@@ -14,18 +14,14 @@ type DirectiveOrStatement interface {
 }
 
 func unmarshalDirectiveOrStatement(m json.RawMessage) (DirectiveOrStatement, error) {
-	var s Statement
-	if err := json.Unmarshal([]byte(m), &s); err == nil {
-		return s, nil
-	} else if !errors.Is(err, ErrWrongType) {
-		return nil, err
+	if s, match, err := unmarshalStatement(m); match {
+		return s, err
 	}
-
 	var d Directive
 	if err := json.Unmarshal([]byte(m), &d); err == nil {
 		return d, nil
 	} else if !errors.Is(err, ErrWrongType) {
-		return nil, err
+		return nil, err // don't return incomplete object
 	}
 
 	return nil, fmt.Errorf("%w: expected Directive or Statement, got %v", ErrWrongType, string(m))

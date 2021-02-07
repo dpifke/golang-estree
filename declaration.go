@@ -2,7 +2,6 @@ package estree
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 )
 
@@ -50,7 +49,7 @@ func (fd *FunctionDeclaration) UnmarshalJSON(b []byte) error {
 	if err == nil && len(x.Params) > 0 {
 		fd.Params = make([]Pattern, len(x.Params))
 		for i := range x.Params {
-			if fd.Params[i], err = unmarshalPattern(x.Params[i]); err != nil {
+			if fd.Params[i], _, err = unmarshalPattern(x.Params[i]); err != nil {
 				break
 			}
 		}
@@ -68,20 +67,25 @@ type VariableDeclarationOrExpression interface {
 }
 
 func unmarshalVariableDeclarationOrExpression(m json.RawMessage) (VariableDeclarationOrExpression, error) {
-	var vd VariableDeclaration
-	if err := json.Unmarshal([]byte(m), &vd); err == nil {
-		return vd, nil
-	} else if !errors.Is(err, ErrWrongType) {
-		return nil, err
+	if e, match, err := unmarshalExpression(m); match {
+		return e, err
+	}
+	var x struct {
+		Type string `json:"type"`
+	}
+	var err error
+	if err = json.Unmarshal(m, &x); err == nil {
+		var vd VariableDeclaration
+		if x.Type == vd.Type() {
+			if err = json.Unmarshal([]byte(m), &vd); err == nil {
+				return vd, nil
+			}
+		} else {
+			err = fmt.Errorf("%w: expected VariableDeclaration or Expression, got %v", ErrWrongType, string(m))
+		}
 	}
 
-	if e, err := unmarshalExpression(m); err == nil {
-		return e, nil
-	} else if !errors.Is(err, ErrWrongType) {
-		return nil, err
-	}
-
-	return nil, fmt.Errorf("%w: expected VariableDeclaration or Expression, got %v", ErrWrongType, string(m))
+	return nil, err
 }
 
 type VariableDeclarationOrPattern interface {
@@ -91,20 +95,24 @@ type VariableDeclarationOrPattern interface {
 }
 
 func unmarshalVariableDeclarationOrPattern(m json.RawMessage) (VariableDeclarationOrPattern, error) {
-	var vd VariableDeclaration
-	if err := json.Unmarshal([]byte(m), &vd); err == nil {
-		return vd, nil
-	} else if !errors.Is(err, ErrWrongType) {
-		return nil, err
+	if e, match, err := unmarshalPattern(m); match {
+		return e, err
 	}
-
-	if p, err := unmarshalPattern(m); err == nil {
-		return p, nil
-	} else if !errors.Is(err, ErrWrongType) {
-		return nil, err
+	var x struct {
+		Type string `json:"type"`
 	}
-
-	return nil, fmt.Errorf("%w: expected VariableDeclaration or Expression, got %v", ErrWrongType, string(m))
+	var err error
+	if err = json.Unmarshal(m, &x); err == nil {
+		var vd VariableDeclaration
+		if x.Type == vd.Type() {
+			if err = json.Unmarshal([]byte(m), &vd); err == nil {
+				return vd, nil
+			}
+		} else {
+			err = fmt.Errorf("%w: expected VariableDeclaration or Pattern, got %v", ErrWrongType, string(m))
+		}
+	}
+	return nil, err
 }
 
 type VariableDeclarationKind string
@@ -187,10 +195,10 @@ func (vd *VariableDeclarator) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, vd.Type(), x.Type)
 	}
 	if err == nil {
-		vd.ID, err = unmarshalPattern(x.ID)
+		vd.ID, _, err = unmarshalPattern(x.ID)
 	}
 	if err == nil && len(x.Init) > 0 {
-		vd.Init, err = unmarshalExpression(x.Init)
+		vd.Init, _, err = unmarshalExpression(x.Init)
 	}
 	return err
 }

@@ -75,7 +75,7 @@ func (ue *UnaryExpression) UnmarshalJSON(b []byte) error {
 		}
 	}
 	if err == nil {
-		ue.Argument, err = unmarshalExpression(x.Argument)
+		ue.Argument, _, err = unmarshalExpression(x.Argument)
 	}
 	return err
 }
@@ -135,7 +135,7 @@ func (ue *UpdateExpression) UnmarshalJSON(b []byte) error {
 		}
 	}
 	if err == nil {
-		ue.Argument, err = unmarshalExpression(x.Argument)
+		ue.Argument, _, err = unmarshalExpression(x.Argument)
 	}
 	return err
 }

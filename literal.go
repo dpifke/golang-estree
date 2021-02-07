@@ -11,28 +11,8 @@ type Literal interface {
 	Expression
 
 	isLiteral()
-}
-
-type LiteralOrIdentifier interface {
-	Node
-
 	isLiteralOrIdentifier()
-}
-
-type baseLiteral struct {
-	baseExpression
-}
-
-func (baseLiteral) Type() string                    { return "Literal" }
-func (baseLiteral) isLiteral()                      {}
-func (baseLiteral) isVariableDeclarationOrLiteral() {}
-func (baseLiteral) isLiteralOrIdentifier()          {}
-
-func (bl baseLiteral) marshalJSON(value interface{}) ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"type":  bl.Type(),
-		"value": value,
-	})
+	isVariableDeclarationOrLiteral()
 }
 
 func unmarshalLiteral(m json.RawMessage) (Literal, error) {
@@ -54,9 +34,42 @@ func unmarshalLiteral(m json.RawMessage) (Literal, error) {
 	if err := json.Unmarshal([]byte(m), &re); err == nil {
 		return re, nil
 	} else if !errors.Is(err, ErrWrongType) {
-		return nil, err
+		return nil, err // don't return incomplete object
 	}
 	return nil, fmt.Errorf("%w: expected Literal, got %v", ErrWrongType, string(m))
+}
+
+type LiteralOrIdentifier interface {
+	Node
+
+	isLiteralOrIdentifier()
+}
+
+func unmarshalLiteralOrIdentifier(m json.RawMessage) (LiteralOrIdentifier, bool, error) {
+	if l, err := unmarshalLiteral(m); !errors.Is(err, ErrWrongType) {
+		return l, true, err
+	}
+	var i Identifier
+	if err := i.UnmarshalJSON([]byte(m)); !errors.Is(err, ErrWrongType) {
+		return i, true, err
+	}
+	return nil, false, fmt.Errorf("%w: expected Literal or Identifier, got %v", ErrWrongType, string(m))
+}
+
+type baseLiteral struct {
+	baseExpression
+}
+
+func (baseLiteral) Type() string                    { return "Literal" }
+func (baseLiteral) isLiteral()                      {}
+func (baseLiteral) isLiteralOrIdentifier()          {}
+func (baseLiteral) isVariableDeclarationOrLiteral() {}
+
+func (bl baseLiteral) marshalJSON(value interface{}) ([]byte, error) {
+	return json.Marshal(map[string]interface{}{
+		"type":  bl.Type(),
+		"value": value,
+	})
 }
 
 type StringLiteral struct {

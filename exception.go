@@ -29,7 +29,7 @@ func (ts *ThrowStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ts.Type(), x.Type)
 	}
 	if err == nil {
-		ts.Argument, err = unmarshalExpression(x.Argument)
+		ts.Argument, _, err = unmarshalExpression(x.Argument)
 	}
 	return err
 }
@@ -69,7 +69,7 @@ func (ts *TryStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ts.Type(), x.Type)
 	}
 	if err == nil && len(x.Finalizer) > 0 {
-		ts.Finalizer, err = unmarshalStatement(x.Finalizer)
+		ts.Finalizer, _, err = unmarshalStatement(x.Finalizer)
 	}
 	return err
 }
@@ -99,7 +99,7 @@ func (cc *CatchClause) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, cc.Type(), x.Type)
 	}
 	if err == nil {
-		cc.Param, err = unmarshalPattern(x.Param)
+		cc.Param, _, err = unmarshalPattern(x.Param)
 	}
 	return err
 }

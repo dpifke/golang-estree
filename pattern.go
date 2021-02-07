@@ -14,16 +14,16 @@ type Pattern interface {
 	isPatternOrExpression()
 }
 
-func unmarshalPattern(m json.RawMessage) (Pattern, error) {
+func unmarshalPattern(m json.RawMessage) (Pattern, bool, error) {
 	var i Identifier
 	err := json.Unmarshal(m, &i)
 	if err == nil {
-		return i, nil
+		return i, true, nil
 	}
 	if errors.Is(err, ErrWrongType) {
-		err = fmt.Errorf("%w: expected Pattern, got %v", ErrWrongType, string(m))
+		return nil, false, fmt.Errorf("%w: expected Pattern, got %v", ErrWrongType, string(m))
 	}
-	return nil, err
+	return nil, true, err
 }
 
 type PatternOrExpression interface {
@@ -33,15 +33,11 @@ type PatternOrExpression interface {
 }
 
 func unmarshalPatternOrExpression(m json.RawMessage) (PatternOrExpression, error) {
-	if p, err := unmarshalPattern(m); err == nil {
-		return p, nil
-	} else if !errors.Is(err, ErrWrongType) {
-		return nil, err
+	if p, match, err := unmarshalPattern(m); match {
+		return p, err
 	}
-	if e, err := unmarshalExpression(m); err == nil {
-		return e, nil
-	} else if !errors.Is(err, ErrWrongType) {
-		return nil, err
+	if e, match, err := unmarshalExpression(m); match {
+		return e, err
 	}
 	return nil, fmt.Errorf("%w: expected Pattern or Expression, got %v", ErrWrongType, string(m))
 }

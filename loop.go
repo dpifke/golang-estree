@@ -32,10 +32,10 @@ func (ws *WhileStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ws.Type(), x.Type)
 	}
 	if err == nil && len(x.Test) > 0 {
-		ws.Test, err = unmarshalExpression(x.Test)
+		ws.Test, _, err = unmarshalExpression(x.Test)
 	}
 	if err == nil && len(x.Body) > 0 {
-		ws.Body, err = unmarshalStatement(x.Body)
+		ws.Body, _, err = unmarshalStatement(x.Body)
 	}
 	return err
 }
@@ -67,10 +67,10 @@ func (dws *DoWhileStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, dws.Type(), x.Type)
 	}
 	if err == nil && len(x.Test) > 0 {
-		dws.Test, err = unmarshalExpression(x.Test)
+		dws.Test, _, err = unmarshalExpression(x.Test)
 	}
 	if err == nil && len(x.Body) > 0 {
-		dws.Body, err = unmarshalStatement(x.Body)
+		dws.Body, _, err = unmarshalStatement(x.Body)
 	}
 	return err
 }
@@ -118,13 +118,13 @@ func (fs *ForStatement) UnmarshalJSON(b []byte) error {
 		fs.Init, err = unmarshalVariableDeclarationOrExpression(x.Init)
 	}
 	if err == nil && len(x.Test) > 0 {
-		fs.Test, err = unmarshalExpression(x.Test)
+		fs.Test, _, err = unmarshalExpression(x.Test)
 	}
 	if err == nil && len(x.Update) > 0 {
-		fs.Update, err = unmarshalExpression(x.Update)
+		fs.Update, _, err = unmarshalExpression(x.Update)
 	}
 	if err == nil {
-		fs.Body, err = unmarshalStatement(x.Body)
+		fs.Body, _, err = unmarshalStatement(x.Body)
 	}
 	return err
 }
@@ -162,10 +162,10 @@ func (fis *ForInStatement) UnmarshalJSON(b []byte) error {
 		fis.Left, err = unmarshalVariableDeclarationOrPattern(x.Left)
 	}
 	if err == nil {
-		fis.Right, err = unmarshalExpression(x.Right)
+		fis.Right, _, err = unmarshalExpression(x.Right)
 	}
 	if err == nil {
-		fis.Body, err = unmarshalStatement(x.Body)
+		fis.Body, _, err = unmarshalStatement(x.Body)
 	}
 	return err
 }

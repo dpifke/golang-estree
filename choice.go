@@ -38,13 +38,13 @@ func (is *IfStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, is.Type(), x.Type)
 	}
 	if err == nil {
-		is.Test, err = unmarshalExpression(x.Test)
+		is.Test, _, err = unmarshalExpression(x.Test)
 	}
 	if err == nil {
-		is.Consequent, err = unmarshalStatement(x.Consequent)
+		is.Consequent, _, err = unmarshalStatement(x.Consequent)
 	}
 	if err == nil && len(x.Alternate) > 0 {
-		is.Alternate, err = unmarshalStatement(x.Alternate)
+		is.Alternate, _, err = unmarshalStatement(x.Alternate)
 	}
 	return err
 }
@@ -76,7 +76,7 @@ func (ss *SwitchStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ss.Type(), x.Type)
 	}
 	if err == nil {
-		ss.Discriminant, err = unmarshalExpression(x.Discriminant)
+		ss.Discriminant, _, err = unmarshalExpression(x.Discriminant)
 	}
 	return err
 }
@@ -112,10 +112,10 @@ func (sc *SwitchCase) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, sc.Type(), x.Type)
 	}
 	if err == nil && len(x.Test) > 0 {
-		sc.Test, err = unmarshalExpression(x.Test)
+		sc.Test, _, err = unmarshalExpression(x.Test)
 	}
 	if err == nil && len(x.Consequent) > 0 {
-		sc.Consequent, err = unmarshalStatement(x.Consequent)
+		sc.Consequent, _, err = unmarshalStatement(x.Consequent)
 	}
 	return err
 }

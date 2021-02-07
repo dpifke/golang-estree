@@ -119,10 +119,10 @@ func (be *BinaryExpression) UnmarshalJSON(b []byte) error {
 		}
 	}
 	if err == nil {
-		be.Left, err = unmarshalExpression(x.Left)
+		be.Left, _, err = unmarshalExpression(x.Left)
 	}
 	if err == nil {
-		be.Right, err = unmarshalExpression(x.Right)
+		be.Right, _, err = unmarshalExpression(x.Right)
 	}
 	return err
 }
@@ -218,7 +218,7 @@ func (ae *AssignmentExpression) UnmarshalJSON(b []byte) error {
 		ae.Left, err = unmarshalPatternOrExpression(x.Left)
 	}
 	if err == nil {
-		ae.Right, err = unmarshalExpression(x.Right)
+		ae.Right, _, err = unmarshalExpression(x.Right)
 	}
 	return err
 }
@@ -277,10 +277,10 @@ func (le *LogicalExpression) UnmarshalJSON(b []byte) error {
 		}
 	}
 	if err == nil {
-		le.Left, err = unmarshalExpression(x.Left)
+		le.Left, _, err = unmarshalExpression(x.Left)
 	}
 	if err == nil {
-		le.Right, err = unmarshalExpression(x.Right)
+		le.Right, _, err = unmarshalExpression(x.Right)
 	}
 	return err
 }
@@ -315,10 +315,10 @@ func (me *MemberExpression) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, me.Type(), x.Type)
 	}
 	if err == nil {
-		me.Object, err = unmarshalExpression(x.Object)
+		me.Object, _, err = unmarshalExpression(x.Object)
 	}
 	if err == nil {
-		me.Property, err = unmarshalExpression(x.Property)
+		me.Property, _, err = unmarshalExpression(x.Property)
 	}
 	return err
 }

@@ -29,7 +29,7 @@ func (rs *ReturnStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, rs.Type(), x.Type)
 	}
 	if err == nil {
-		rs.Argument, err = unmarshalExpression(x.Argument)
+		rs.Argument, _, err = unmarshalExpression(x.Argument)
 	}
 	return err
 }
@@ -61,7 +61,7 @@ func (ls *LabeledStatement) UnmarshalJSON(b []byte) error {
 		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ls.Type(), x.Type)
 	}
 	if err == nil {
-		ls.Body, err = unmarshalStatement(x.Body)
+		ls.Body, _, err = unmarshalStatement(x.Body)
 	}
 	return err
 }
