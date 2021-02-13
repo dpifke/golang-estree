@@ -44,7 +44,7 @@ func unmarshalLiteral(m json.RawMessage) (l Literal, match bool, err error) {
 				}
 			}
 		} else {
-			err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, baseLiteral{}.Type(), x.Type)
+			err = fmt.Errorf("%w %s, got %q", ErrWrongType, baseLiteral{}.Type(), x.Type)
 		}
 	}
 	return
@@ -63,7 +63,7 @@ func unmarshalLiteralOrIdentifier(m json.RawMessage) (LiteralOrIdentifier, bool,
 	if err := i.UnmarshalJSON([]byte(m)); !errors.Is(err, ErrWrongType) {
 		return i, true, err
 	}
-	return nil, false, fmt.Errorf("%w: expected Literal or Identifier, got %v", ErrWrongType, string(m))
+	return nil, false, fmt.Errorf("%w Literal or Identifier, got %v", ErrWrongType, string(m))
 }
 
 type baseLiteral struct {
@@ -193,7 +193,7 @@ func (rel *RegExpLiteral) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != rel.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, rel.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, rel.Type(), x.Type)
 	}
 	if err == nil {
 		rel.Loc, rel.Pattern, rel.Flags = x.Loc, x.Regex.Pattern, x.Regex.Flags

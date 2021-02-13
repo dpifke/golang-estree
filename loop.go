@@ -35,7 +35,10 @@ func (ws WhileStatement) Walk(v Visitor) {
 }
 
 func (ws WhileStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ws}
+	c.require(ws.Test, "while expression")
+	c.require(ws.Body, "while body")
+	return c.errors()
 }
 
 func (ws WhileStatement) MarshalJSON() ([]byte, error) {
@@ -54,7 +57,7 @@ func (ws *WhileStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ws.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ws.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ws.Type(), x.Type)
 	}
 	if err == nil {
 		ws.Loc = x.Loc
@@ -97,7 +100,10 @@ func (dws DoWhileStatement) Walk(v Visitor) {
 }
 
 func (dws DoWhileStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: dws}
+	c.require(dws.Body, "while body")
+	c.require(dws.Test, "while expression")
+	return c.errors()
 }
 
 func (dws DoWhileStatement) MarshalJSON() ([]byte, error) {
@@ -116,7 +122,7 @@ func (dws *DoWhileStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != dws.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, dws.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, dws.Type(), x.Type)
 	}
 	if err == nil {
 		dws.Loc = x.Loc
@@ -133,9 +139,9 @@ func (dws *DoWhileStatement) UnmarshalJSON(b []byte) error {
 type ForStatement struct {
 	baseStatement
 	Loc    SourceLocation
-	Init   VariableDeclarationOrExpression
-	Test   Expression
-	Update Expression
+	Init   VariableDeclarationOrExpression // or nil
+	Test   Expression                      // or nil
+	Update Expression                      // or nil
 	Body   Statement
 }
 
@@ -169,7 +175,12 @@ func (fs ForStatement) Walk(v Visitor) {
 }
 
 func (fs ForStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: fs}
+	c.optional(fs.Init)
+	c.optional(fs.Test)
+	c.optional(fs.Update)
+	c.require(fs.Body, "for body")
+	return c.errors()
 }
 
 func (fs ForStatement) MarshalJSON() ([]byte, error) {
@@ -198,7 +209,7 @@ func (fs *ForStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != fs.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, fs.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, fs.Type(), x.Type)
 	}
 	if err == nil && len(x.Init) > 0 {
 		fs.Loc = x.Loc
@@ -257,7 +268,11 @@ func (fis ForInStatement) Walk(v Visitor) {
 }
 
 func (fis ForInStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: fis}
+	c.require(fis.Left, "left-hand for...in expression")
+	c.require(fis.Right, "right-hand for...in expression")
+	c.require(fis.Body, "for...in body")
+	return c.errors()
 }
 
 func (fis ForInStatement) MarshalJSON() ([]byte, error) {
@@ -278,7 +293,7 @@ func (fis *ForInStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != fis.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, fis.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, fis.Type(), x.Type)
 	}
 	if err == nil {
 		fis.Loc = x.Loc

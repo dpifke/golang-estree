@@ -20,7 +20,7 @@ func unmarshalPattern(m json.RawMessage) (Pattern, bool, error) {
 		return i, true, nil
 	}
 	if errors.Is(err, ErrWrongType) {
-		return nil, false, fmt.Errorf("%w: expected Pattern, got %v", ErrWrongType, string(m))
+		return nil, false, fmt.Errorf("%w Pattern, got %v", ErrWrongType, string(m))
 	}
 	return nil, true, err
 }
@@ -37,7 +37,7 @@ func unmarshalPatternOrExpression(m json.RawMessage) (PatternOrExpression, error
 	if e, match, err := unmarshalExpression(m); match {
 		return e, err
 	}
-	return nil, fmt.Errorf("%w: expected Pattern or Expression, got %v", ErrWrongType, string(m))
+	return nil, fmt.Errorf("%w Pattern or Expression, got %v", ErrWrongType, string(m))
 }
 
 type basePattern struct {

@@ -12,7 +12,7 @@ type IfStatement struct {
 	Loc        SourceLocation
 	Test       Expression
 	Consequent Statement
-	Alternate  Statement
+	Alternate  Statement // or nil
 }
 
 func (IfStatement) Type() string                { return "IfStatement" }
@@ -41,7 +41,11 @@ func (is IfStatement) Walk(v Visitor) {
 }
 
 func (is IfStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: is}
+	c.require(is.Test, "if expression")
+	c.require(is.Consequent, "if statement block")
+	c.optional(is.Alternate)
+	return c.errors()
 }
 
 func (is IfStatement) MarshalJSON() ([]byte, error) {
@@ -64,7 +68,7 @@ func (is *IfStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != is.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, is.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, is.Type(), x.Type)
 	}
 	if err == nil {
 		is.Loc = x.Loc
@@ -73,8 +77,10 @@ func (is *IfStatement) UnmarshalJSON(b []byte) error {
 		if is.Consequent, _, err2 = unmarshalStatement(x.Consequent); err == nil && err2 != nil {
 			err = err2
 		}
-		if is.Alternate, _, err2 = unmarshalStatement(x.Alternate); err == nil && err2 != nil {
-			err = err2
+		if isNullOrEmptyRawMessage(x.Alternate) {
+			if is.Alternate, _, err2 = unmarshalStatement(x.Alternate); err == nil && err2 != nil {
+				err = err2
+			}
 		}
 	}
 	return err
@@ -111,7 +117,9 @@ func (ss SwitchStatement) Walk(v Visitor) {
 }
 
 func (ss SwitchStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ss}
+	c.require(ss.Discriminant, "switch expression")
+	return c.errors()
 }
 
 func (ss SwitchStatement) MarshalJSON() ([]byte, error) {
@@ -130,7 +138,7 @@ func (ss *SwitchStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ss.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ss.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ss.Type(), x.Type)
 	}
 	if err == nil {
 		ss.Loc, ss.Cases = x.Loc, x.Cases
@@ -145,19 +153,14 @@ func (ss *SwitchStatement) UnmarshalJSON(b []byte) error {
 // If Test is nil, this SwitchCase is the default clause.
 type SwitchCase struct {
 	Loc        SourceLocation
-	Test       Expression
-	Consequent Statement
+	Test       Expression // or nil
+	Consequent []Statement
 }
 
 func (SwitchCase) Type() string                { return "SwitchCase" }
 func (sc SwitchCase) Location() SourceLocation { return sc.Loc }
 func (SwitchCase) MinVersion() Version         { return ES5 }
-
-func (sc SwitchCase) IsZero() bool {
-	return sc.Loc.IsZero() &&
-		(sc.Test == nil || sc.Test.IsZero()) &&
-		(sc.Consequent == nil || sc.Consequent.IsZero())
-}
+func (SwitchCase) IsZero() bool                { return false }
 
 func (sc SwitchCase) Walk(v Visitor) {
 	if v = v.Visit(sc); v != nil {
@@ -165,14 +168,22 @@ func (sc SwitchCase) Walk(v Visitor) {
 		if sc.Test != nil {
 			sc.Test.Walk(v)
 		}
-		if sc.Consequent != nil {
-			sc.Consequent.Walk(v)
+		for _, c := range sc.Consequent {
+			if c != nil {
+				c.Walk(v)
+			}
 		}
 	}
 }
 
 func (sc SwitchCase) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: sc}
+	c.optional(sc.Test)
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return sc.Consequent[i] },
+		Len:   len(sc.Consequent),
+	}, "switch case statement")
+	return c.errors()
 }
 
 func (sc SwitchCase) MarshalJSON() ([]byte, error) {
@@ -188,21 +199,26 @@ func (sc SwitchCase) MarshalJSON() ([]byte, error) {
 
 func (sc *SwitchCase) UnmarshalJSON(b []byte) error {
 	var x struct {
-		Type       string          `json:"type"`
-		Loc        SourceLocation  `json:"loc"`
-		Test       json.RawMessage `json:"test"`
-		Consequent json.RawMessage `json:"consequent"`
+		Type       string            `json:"type"`
+		Loc        SourceLocation    `json:"loc"`
+		Test       json.RawMessage   `json:"test"`
+		Consequent []json.RawMessage `json:"consequent"`
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != sc.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, sc.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, sc.Type(), x.Type)
 	}
 	if err == nil && len(x.Test) > 0 {
 		sc.Loc = x.Loc
 		sc.Test, _, err = unmarshalExpression(x.Test)
-	}
-	if err == nil && len(x.Consequent) > 0 {
-		sc.Consequent, _, err = unmarshalStatement(x.Consequent)
+		sc.Consequent = make([]Statement, len(x.Consequent))
+		for i := range x.Consequent {
+			var err2 error
+			sc.Consequent[i], _, err2 = unmarshalStatement(x.Consequent[i])
+			if err == nil && err2 != nil {
+				err = err2
+			}
+		}
 	}
 	return err
 }

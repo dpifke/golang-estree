@@ -22,8 +22,7 @@ func unmarshalDirectiveOrStatement(m json.RawMessage) (DirectiveOrStatement, err
 	} else if !errors.Is(err, ErrWrongType) {
 		return nil, err // don't return incomplete object
 	}
-
-	return nil, fmt.Errorf("%w: expected Directive or Statement, got %v", ErrWrongType, string(m))
+	return nil, fmt.Errorf("%w Directive or Statement, got %v", ErrWrongType, string(m))
 }
 
 // Program is a complete program source tree.
@@ -50,7 +49,12 @@ func (p Program) Walk(v Visitor) {
 }
 
 func (p Program) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: p}
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return p.Body[i] },
+		Len:   len(p.Body),
+	}, "directive or statement")
+	return c.errors()
 }
 
 func (p Program) MarshalJSON() ([]byte, error) {
@@ -67,7 +71,7 @@ func (p *Program) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != p.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, p.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, p.Type(), x.Type)
 	}
 	if err == nil {
 		p.Loc = x.Loc

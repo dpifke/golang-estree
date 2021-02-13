@@ -5,9 +5,14 @@ import (
 	"fmt"
 )
 
+// Expression is an expression node.
+//
+// Since the left-hand side of an assignment may be any expression in general,
+// an expression can also be a pattern.
 type Expression interface {
 	Node
 	isExpression()
+	isExpressionOrArrayHole()
 	isVariableDeclarationOrExpression()
 	isPatternOrExpression()
 }
@@ -60,7 +65,7 @@ func unmarshalExpression(m json.RawMessage) (e Expression, match bool, err error
 			var se SequenceExpression
 			e, match, err = se, true, json.Unmarshal(m, &se)
 		default:
-			err = fmt.Errorf("%w: expected Expression, got %v", ErrWrongType, string(m))
+			err = fmt.Errorf("%w Expression, got %v", ErrWrongType, string(m))
 		}
 		if err != nil {
 			e = nil // don't return incomplete nodes
@@ -73,9 +78,11 @@ type baseExpression struct{}
 
 func (baseExpression) MinVersion() Version                { return ES5 }
 func (baseExpression) isExpression()                      {}
+func (baseExpression) isExpressionOrArrayHole()           {}
 func (baseExpression) isVariableDeclarationOrExpression() {}
 func (baseExpression) isPatternOrExpression()             {}
 
+// ThisExpression represents the "this" keyword.
 type ThisExpression struct {
 	baseExpression
 	Loc SourceLocation
@@ -83,19 +90,13 @@ type ThisExpression struct {
 
 func (ThisExpression) Type() string                { return "ThisExpression" }
 func (te ThisExpression) Location() SourceLocation { return te.Loc }
-
-func (te ThisExpression) IsZero() bool {
-	return false // no required members
-}
+func (ThisExpression) IsZero() bool                { return false }
+func (ThisExpression) Errors() []error             { return nil }
 
 func (te ThisExpression) Walk(v Visitor) {
 	if v = v.Visit(te); v != nil {
 		v.Visit(nil)
 	}
-}
-
-func (te ThisExpression) Errors() []error {
-	return nil // TODO
 }
 
 func (te ThisExpression) MarshalJSON() ([]byte, error) {
@@ -109,7 +110,7 @@ func (te *ThisExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != te.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, te.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, te.Type(), x.Type)
 	}
 	if err == nil {
 		te.Loc = x.Loc
@@ -117,21 +118,45 @@ func (te *ThisExpression) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+type ExpressionOrArrayHole interface {
+	Node
+	isExpressionOrArrayHole()
+}
+
+// ArrayHole represents a hole in a sparse array, e.g. [1,,2].
+//
+// This type is not part of estree, but is needed because it is not possible
+// to Walk nil interfaces.  It encodes to/from null in the JSON
+// representation.
+type ArrayHole struct{}
+
+func (ArrayHole) Type() string             { return "ArrayHole" }
+func (ArrayHole) Location() SourceLocation { return SourceLocation{} }
+func (ArrayHole) MinVersion() Version      { return ES5 }
+func (ArrayHole) IsZero() bool             { return false }
+func (ArrayHole) Errors() []error          { return nil }
+func (ArrayHole) isExpressionOrArrayHole() {}
+
+func (ah ArrayHole) Walk(v Visitor) {
+	if v = v.Visit(ah); v != nil {
+		v.Visit(nil)
+	}
+}
+
+func (ah ArrayHole) MarshalJSON() ([]byte, error) {
+	return json.Marshal(nil)
+}
+
 // ArrayExpression is an array expression.
 type ArrayExpression struct {
 	baseExpression
-	Loc SourceLocation
-
-	// TODO: ExpressionOrNilArrayElement to support sparse arrays
-	Elements []Expression
+	Loc      SourceLocation
+	Elements []ExpressionOrArrayHole
 }
 
 func (ArrayExpression) Type() string                { return "ArrayExpression" }
 func (ae ArrayExpression) Location() SourceLocation { return ae.Loc }
-
-func (ae ArrayExpression) IsZero() bool {
-	return false // empty array is non-zero
-}
+func (ArrayExpression) IsZero() bool                { return false }
 
 func (ae ArrayExpression) Walk(v Visitor) {
 	if v = v.Visit(ae); v != nil {
@@ -145,7 +170,12 @@ func (ae ArrayExpression) Walk(v Visitor) {
 }
 
 func (ae ArrayExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ae}
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return ae.Elements[i] },
+		Len:   len(ae.Elements),
+	}, "array element")
+	return c.errors()
 }
 
 func (ae ArrayExpression) MarshalJSON() ([]byte, error) {
@@ -162,18 +192,20 @@ func (ae *ArrayExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ae.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ae.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ae.Type(), x.Type)
 	}
 	if err == nil {
 		ae.Loc = x.Loc
-		ae.Elements = make([]Expression, len(x.Elements))
+		ae.Elements = make([]ExpressionOrArrayHole, len(x.Elements))
 		for i := range x.Elements {
-			if len(x.Elements[i]) == 0 { // or x.Elements[i] unmarshals to nil?
-				continue // TODO: insertNilArrayElement
-			}
-			var err2 error
-			if ae.Elements[i], _, err2 = unmarshalExpression(x.Elements[i]); err == nil && err2 != nil {
-				err = err2
+			if isNullOrEmptyRawMessage(x.Elements[i]) {
+				ae.Elements[i] = ArrayHole{}
+			} else {
+				var err2 error
+				ae.Elements[i], _, err2 = unmarshalExpression(x.Elements[i])
+				if err == nil && err2 != nil {
+					err = err2
+				}
 			}
 		}
 	}
@@ -189,10 +221,7 @@ type ObjectExpression struct {
 
 func (ObjectExpression) Type() string                { return "ObjectExpression" }
 func (oe ObjectExpression) Location() SourceLocation { return oe.Loc }
-
-func (oe ObjectExpression) IsZero() bool {
-	return false // empty object is non-zero
-}
+func (ObjectExpression) IsZero() bool                { return false }
 
 func (oe ObjectExpression) Walk(v Visitor) {
 	if v = v.Visit(oe); v != nil {
@@ -203,8 +232,13 @@ func (oe ObjectExpression) Walk(v Visitor) {
 	}
 }
 
-func (ae ObjectExpression) Errors() []error {
-	return nil // TODO
+func (oe ObjectExpression) Errors() []error {
+	c := nodeChecker{Node: oe}
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return oe.Properties[i] },
+		Len:   len(oe.Properties),
+	}, "object property")
+	return c.errors()
 }
 
 func (oe ObjectExpression) MarshalJSON() ([]byte, error) {
@@ -222,7 +256,7 @@ func (oe *ObjectExpression) UnmarshalJSON(b []byte) error {
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != oe.Type() {
 		oe.Loc, oe.Properties = x.Loc, x.Properties
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, oe.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, oe.Type(), x.Type)
 	}
 	return err
 }
@@ -259,13 +293,10 @@ func (pk PropertyKind) IsValid() bool {
 
 // Property is a literal property in an ObjectExpression.
 type Property struct {
-	Loc SourceLocation
-	Key LiteralOrIdentifier
-
-	// Value can be either a string or a number.
+	Loc   SourceLocation
+	Key   LiteralOrIdentifier
 	Value Expression
-
-	Kind PropertyKind
+	Kind  PropertyKind
 }
 
 func (Property) Type() string               { return "Property" }
@@ -292,7 +323,13 @@ func (p Property) Walk(v Visitor) {
 }
 
 func (p Property) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: p}
+	c.require(p.Key, "property name")
+	c.require(p.Value, "property expression")
+	if !p.Kind.IsValid() {
+		c.appendf("%w PropertyKind %q", ErrWrongValue, p.Kind)
+	}
+	return c.errors()
 }
 
 func (p Property) MarshalJSON() ([]byte, error) {
@@ -313,14 +350,14 @@ func (p *Property) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != p.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, p.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, p.Type(), x.Type)
 	}
 	if err == nil {
 		p.Loc = x.Loc
 		if x.Kind.IsValid() {
 			p.Kind = x.Kind
 		} else {
-			err = fmt.Errorf("%w for Property.Kind: %q", ErrWrongValue, x.Kind)
+			err = fmt.Errorf("%w Property.Kind %q", ErrWrongValue, x.Kind)
 		}
 		var err2 error
 		if p.Key, _, err2 = unmarshalLiteralOrIdentifier(x.Key); err == nil && err2 != nil {
@@ -337,7 +374,7 @@ func (p *Property) UnmarshalJSON(b []byte) error {
 type FunctionExpression struct {
 	baseExpression
 	Loc    SourceLocation
-	ID     Identifier
+	ID     Identifier // or nil
 	Params []Pattern
 	Body   FunctionBody
 }
@@ -346,7 +383,10 @@ func (FunctionExpression) Type() string                { return "FunctionExpress
 func (fe FunctionExpression) Location() SourceLocation { return fe.Loc }
 
 func (fe FunctionExpression) IsZero() bool {
-	return false // empty function is non-zero
+	return fe.Loc.IsZero() &&
+		fe.ID.IsZero() &&
+		len(fe.Params) == 0 &&
+		fe.Body.IsZero()
 }
 
 func (fe FunctionExpression) Walk(v Visitor) {
@@ -356,7 +396,14 @@ func (fe FunctionExpression) Walk(v Visitor) {
 }
 
 func (fe FunctionExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: fe}
+	c.optional(fe.ID)
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return fe.Params[i] },
+		Len:   len(fe.Params),
+	}, "function parameter")
+	c.require(fe.Body, "function body")
+	return c.errors()
 }
 
 func (fe FunctionExpression) MarshalJSON() ([]byte, error) {
@@ -377,7 +424,7 @@ func (fe *FunctionExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != fe.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, fe.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, fe.Type(), x.Type)
 	}
 	if err == nil && len(x.Params) > 0 {
 		fe.Params = make([]Pattern, len(x.Params))
@@ -389,6 +436,13 @@ func (fe *FunctionExpression) UnmarshalJSON(b []byte) error {
 	}
 	if err == nil {
 		fe.Loc, fe.ID, fe.Body = x.Loc, x.ID, x.Body
+		for i := range x.Params {
+			var err2 error
+			fe.Params[i], _, err2 = unmarshalPattern(x.Params[i])
+			if err == nil && err2 != nil {
+				err = err2
+			}
+		}
 	}
 	return err
 }
@@ -406,8 +460,8 @@ func (ce ConditionalExpression) Location() SourceLocation { return ce.Loc }
 func (ce ConditionalExpression) IsZero() bool {
 	return ce.Loc.IsZero() &&
 		(ce.Test == nil || ce.Test.IsZero()) &&
-		(ce.Alternate == nil || ce.Alternate.IsZero()) &&
-		(ce.Consequent == nil || ce.Consequent.IsZero())
+		(ce.Consequent == nil || ce.Consequent.IsZero()) &&
+		(ce.Alternate == nil || ce.Alternate.IsZero())
 }
 
 func (ce ConditionalExpression) Walk(v Visitor) {
@@ -426,7 +480,11 @@ func (ce ConditionalExpression) Walk(v Visitor) {
 }
 
 func (ce ConditionalExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ce}
+	c.require(ce.Test, "condition test")
+	c.require(ce.Consequent, "condition consequent")
+	c.require(ce.Alternate, "condition alternate")
+	return c.errors()
 }
 
 func (ce ConditionalExpression) MarshalJSON() ([]byte, error) {
@@ -447,7 +505,7 @@ func (ce *ConditionalExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ce.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ce.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ce.Type(), x.Type)
 	}
 	if err == nil {
 		ce.Loc = x.Loc
@@ -494,7 +552,13 @@ func (ce CallExpression) Walk(v Visitor) {
 }
 
 func (ce CallExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ce}
+	c.require(ce.Callee, "callee")
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return ce.Arguments[i] },
+		Len:   len(ce.Arguments),
+	}, "argument")
+	return c.errors()
 }
 
 func (ce CallExpression) MarshalJSON() ([]byte, error) {
@@ -513,7 +577,7 @@ func (ce *CallExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ce.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ce.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ce.Type(), x.Type)
 	}
 	if err == nil {
 		ce.Loc = x.Loc
@@ -560,7 +624,13 @@ func (ne NewExpression) Walk(v Visitor) {
 }
 
 func (ne NewExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ne}
+	c.require(ne.Callee, "new callee")
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return ne.Arguments[i] },
+		Len:   len(ne.Arguments),
+	}, "new argument")
+	return c.errors()
 }
 
 func (ne NewExpression) MarshalJSON() ([]byte, error) {
@@ -578,7 +648,7 @@ func (ne *NewExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ne.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ne.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ne.Type(), x.Type)
 	}
 	if err == nil {
 		ne.Callee, _, err = unmarshalExpression(x.Callee)
@@ -617,7 +687,12 @@ func (se SequenceExpression) Walk(v Visitor) {
 }
 
 func (se SequenceExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: se}
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return se.Expressions[i] },
+		Len:   len(se.Expressions),
+	}, "expression in sequence")
+	return c.errors()
 }
 
 func (se SequenceExpression) MarshalJSON() ([]byte, error) {
@@ -634,7 +709,7 @@ func (se *SequenceExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != se.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, se.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, se.Type(), x.Type)
 	}
 	if err == nil {
 		se.Loc = x.Loc

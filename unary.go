@@ -75,7 +75,17 @@ func (ue UnaryExpression) Walk(v Visitor) {
 }
 
 func (ue UnaryExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ue}
+	if ue.Prefix {
+		c.require(ue.Argument, "unary argument")
+	}
+	if !ue.Operator.IsValid() {
+		c.appendf("%w UnaryOperator %q", ErrWrongValue, ue.Operator)
+	}
+	if !ue.Prefix {
+		c.require(ue.Argument, "unary argument")
+	}
+	return c.errors()
 }
 
 func (ue UnaryExpression) MarshalJSON() ([]byte, error) {
@@ -96,14 +106,14 @@ func (ue *UnaryExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ue.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ue.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ue.Type(), x.Type)
 	}
 	if err == nil {
 		ue.Loc, ue.Prefix = x.Loc, x.Prefix
 		if x.Operator.IsValid() {
 			ue.Operator = x.Operator
 		} else {
-			err = fmt.Errorf("%w for UnaryExpression.Operator: %q", ErrWrongValue, x.Operator)
+			err = fmt.Errorf("%w UnaryExpression.Operator %q", ErrWrongValue, x.Operator)
 		}
 		var err2 error
 		if ue.Argument, _, err = unmarshalExpression(x.Argument); err == nil && err2 != nil {
@@ -168,7 +178,17 @@ func (ue UpdateExpression) Walk(v Visitor) {
 }
 
 func (ue UpdateExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ue}
+	if ue.Prefix {
+		c.require(ue.Argument, "update argument")
+	}
+	if !ue.Operator.IsValid() {
+		c.appendf("%w UpdateOperator %q", ErrWrongValue, ue.Operator)
+	}
+	if !ue.Prefix {
+		c.require(ue.Argument, "update argument")
+	}
+	return c.errors()
 }
 
 func (ue UpdateExpression) MarshalJSON() ([]byte, error) {
@@ -189,14 +209,14 @@ func (ue *UpdateExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ue.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ue.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ue.Type(), x.Type)
 	}
 	if err == nil {
 		ue.Loc, ue.Prefix = x.Loc, x.Prefix
 		if x.Operator.IsValid() {
 			ue.Operator = x.Operator
 		} else {
-			err = fmt.Errorf("%w for UnaryExpression.Operator: %q", ErrWrongValue, x.Operator)
+			err = fmt.Errorf("%w UnaryExpression.Operator %q", ErrWrongValue, x.Operator)
 		}
 		var err2 error
 		if ue.Argument, _, err2 = unmarshalExpression(x.Argument); err == nil && err2 != nil {

@@ -9,16 +9,13 @@ import (
 type ReturnStatement struct {
 	baseStatement
 	Loc      SourceLocation
-	Argument Expression
+	Argument Expression // or nil
 }
 
 func (ReturnStatement) Type() string                { return "ReturnStatement" }
 func (rs ReturnStatement) Location() SourceLocation { return rs.Loc }
-
-func (rs ReturnStatement) IsZero() bool {
-	return rs.Loc.IsZero() &&
-		(rs.Argument == nil || rs.Argument.IsZero())
-}
+func (ReturnStatement) IsZero() bool                { return false }
+func (ReturnStatement) Errors() []error             { return nil }
 
 func (rs ReturnStatement) Walk(v Visitor) {
 	if v = v.Visit(rs); v != nil {
@@ -27,10 +24,6 @@ func (rs ReturnStatement) Walk(v Visitor) {
 			rs.Argument.Walk(v)
 		}
 	}
-}
-
-func (rs ReturnStatement) Errors() []error {
-	return nil // TODO
 }
 
 func (rs ReturnStatement) MarshalJSON() ([]byte, error) {
@@ -47,7 +40,7 @@ func (rs *ReturnStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != rs.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, rs.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, rs.Type(), x.Type)
 	}
 	if err == nil {
 		rs.Loc = x.Loc
@@ -85,7 +78,10 @@ func (ls LabeledStatement) Walk(v Visitor) {
 }
 
 func (ls LabeledStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ls}
+	c.require(ls.Label, "statement label")
+	c.require(ls.Body, "labeled statement")
+	return c.errors()
 }
 
 func (ls LabeledStatement) MarshalJSON() ([]byte, error) {
@@ -104,7 +100,7 @@ func (ls *LabeledStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ls.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ls.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ls.Type(), x.Type)
 	}
 	if err == nil {
 		ls.Loc, ls.Label = x.Loc, x.Label
@@ -117,25 +113,19 @@ func (ls *LabeledStatement) UnmarshalJSON(b []byte) error {
 type BreakStatement struct {
 	baseStatement
 	Loc   SourceLocation
-	Label Identifier
+	Label Identifier // or nil
 }
 
 func (BreakStatement) Type() string                { return "BreakStatement" }
 func (bs BreakStatement) Location() SourceLocation { return bs.Loc }
-
-func (bs BreakStatement) IsZero() bool {
-	return bs.Loc.IsZero() && bs.Label.IsZero()
-}
+func (BreakStatement) IsZero() bool                { return false }
+func (BreakStatement) Errors() []error             { return nil }
 
 func (bs BreakStatement) Walk(v Visitor) {
 	if v = v.Visit(bs); v != nil {
 		defer v.Visit(nil)
 		bs.Label.Walk(v)
 	}
-}
-
-func (bs BreakStatement) Errors() []error {
-	return nil // TODO
 }
 
 func (bs BreakStatement) MarshalJSON() ([]byte, error) {
@@ -154,7 +144,7 @@ func (bs *BreakStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != bs.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, bs.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, bs.Type(), x.Type)
 	}
 	if err == nil {
 		bs.Loc, bs.Label = x.Loc, x.Label
@@ -171,20 +161,14 @@ type ContinueStatement struct {
 
 func (ContinueStatement) Type() string                { return "ContinueStatement" }
 func (cs ContinueStatement) Location() SourceLocation { return cs.Loc }
-
-func (cs ContinueStatement) IsZero() bool {
-	return cs.Loc.IsZero() && cs.Label.IsZero()
-}
+func (ContinueStatement) IsZero() bool                { return false }
+func (ContinueStatement) Errors() []error             { return nil }
 
 func (cs ContinueStatement) Walk(v Visitor) {
 	if v = v.Visit(cs); v != nil {
 		defer v.Visit(nil)
 		cs.Label.Walk(v)
 	}
-}
-
-func (cs ContinueStatement) Errors() []error {
-	return nil // TODO
 }
 
 func (cs ContinueStatement) MarshalJSON() ([]byte, error) {
@@ -203,7 +187,7 @@ func (cs *ContinueStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != cs.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, cs.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, cs.Type(), x.Type)
 	}
 	if err == nil {
 		cs.Loc, cs.Label = x.Loc, x.Label

@@ -2,54 +2,8 @@ package estree
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 )
-
-// Version represents a particular revision of the ECMAScript standard.
-type Version int
-
-var (
-	ES5    Version = 5
-	ES6    Version = 6
-	ES2015 Version = ES6
-	ES2016 Version = 7
-	ES2017 Version = 8
-	ES2018 Version = 9
-	ES2019 Version = 10
-	ES2020 Version = 11
-	ES2021 Version = 12
-)
-
-func (v Version) String() string {
-	switch v {
-	case ES5:
-		return "ES5"
-	case ES6:
-		return "ES6"
-	case ES2016:
-		return "ES2016"
-	case ES2017:
-		return "ES2017"
-	case ES2018:
-		return "ES2018"
-	case ES2019:
-		return "ES2019"
-	case ES2020:
-		return "ES2020"
-	case ES2021:
-		return "ES2021"
-	}
-	return fmt.Sprintf("%d", int(v))
-}
-
-// Vistor traverses the abstract syntax tree via Node.Walk.
-type Visitor interface {
-	// Visit is invoked for each node encountered by Node.Walk.  If a non-nil
-	// Visitor is returned, Walk visits each of the children of the Node with
-	// the new Visitor, followed by a call of Visit(nil).
-	Visit(Node) Visitor
-}
 
 // Node represents an ESTree abstract syntax tree (AST) node.
 type Node interface {
@@ -60,6 +14,13 @@ type Node interface {
 
 	// Location returns the SourceLocation of the Node.
 	Location() SourceLocation
+
+	// MinVersion reports the lowest version of the ECMAScript specification
+	// required to fully express the syntax of this Node.
+	//
+	// Only the current Node is reported; to recurse into child Nodes, use
+	// Walk.
+	MinVersion() Version
 
 	// IsZero indicates all fields of this Node are their uninitialized (zero
 	// or nil) value, unless all fields are optional, in which case this
@@ -72,23 +33,18 @@ type Node interface {
 	// Walk performs a depth-first search of the AST using Visitor.  The
 	// current Node is visited first, followed by each of its non-nil
 	// children, in the order defined by the ESTree grammar.
+	//
+	// Uninitialized Nodes will be visited, but it is recommended that they be
+	// treated the same as nil, but returning nil from Visitor.Visit if
+	// Node.IsZero is true.
 	Walk(Visitor)
 
 	// Errors checks that required fields of this Node are non-nil and
 	// non-zero, and that values such as operator tokens are valid.
 	//
 	// Only the current Node is checked; to recurse into child Nodes, use
-	// Walk.  The Node is not checked if IsZero indicates the Node is
-	// uninitialized (the parent Node is responsible for reporting if a
-	// nil/zero Node is not permitted here).
-	Errors() []error
-
-	// MinVersion reports the lowest version of the ECMAScript specification
-	// required to fully express the syntax of this Node.
-	//
-	// Only the current Node is reported; to recurse into child Nodes, use
 	// Walk.
-	MinVersion() Version
+	Errors() []error
 }
 
 // nodeToMap returns a map containing a Node's Type and Loc.  Loc is omitted
@@ -105,19 +61,6 @@ func nodeToMap(n Node) map[string]interface{} {
 	}
 	return m
 }
-
-var (
-	// ErrWrongType is wrapped when unmarshaling a Node whose Type is not
-	// allowed at the given location.  The wrapping error will contain
-	// additional information about the Type encountered versus the expected
-	// Type(s).
-	ErrWrongType = errors.New("wrong type")
-
-	// ErrWrongValue is wrapped when unmarshaling a Node with a string
-	// parameter whose value is unrecognized.  The wrapping error will contain
-	// the value encountered.
-	ErrWrongValue = errors.New("unrecognized value")
-)
 
 // SourceLocation contains the start and end positions of a Node.
 type SourceLocation struct {
@@ -168,4 +111,52 @@ type Position struct {
 // IsZero indicates p contains no information about the source location.
 func (p Position) IsZero() bool {
 	return p.Line == 0 && p.Column == 0
+}
+
+// Version represents a particular revision of the ECMAScript standard.
+type Version int
+
+var (
+	ES5    Version = 5
+	ES6    Version = 6
+	ES2015 Version = ES6
+	ES2016 Version = 7
+	ES2017 Version = 8
+	ES2018 Version = 9
+	ES2019 Version = 10
+	ES2020 Version = 11
+	ES2021 Version = 12
+)
+
+func (v Version) String() string {
+	switch v {
+	case ES5:
+		return "ES5"
+	case ES6:
+		return "ES6"
+	case ES2016:
+		return "ES2016"
+	case ES2017:
+		return "ES2017"
+	case ES2018:
+		return "ES2018"
+	case ES2019:
+		return "ES2019"
+	case ES2020:
+		return "ES2020"
+	case ES2021:
+		return "ES2021"
+	}
+	return fmt.Sprintf("%d", int(v))
+}
+
+// Vistor traverses the abstract syntax tree via Node.Walk.
+type Visitor interface {
+	// Visit is invoked for each node encountered by Node.Walk.  If a non-nil
+	// Visitor is returned, Walk visits each of the children of the Node with
+	// the new Visitor, followed by a call of Visit(nil).
+	//
+	// The final Visit(nil) call is via defer, so it's possible for a Visitor
+	// to recover from a panic.
+	Visit(Node) Visitor
 }

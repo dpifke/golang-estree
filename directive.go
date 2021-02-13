@@ -33,7 +33,9 @@ func (d Directive) Walk(v Visitor) {
 }
 
 func (d Directive) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: d}
+	c.require(d.Expression, "directive expression")
+	return c.errors()
 }
 
 func (d Directive) MarshalJSON() ([]byte, error) {
@@ -52,7 +54,7 @@ func (d *Directive) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != d.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, d.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, d.Type(), x.Type)
 	}
 	if err == nil {
 		d.Loc, d.Directive = x.Loc, x.Directive

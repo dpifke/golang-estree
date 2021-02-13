@@ -29,7 +29,9 @@ func (ts ThrowStatement) Walk(v Visitor) {
 }
 
 func (ts ThrowStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ts}
+	c.require(ts.Argument, "throw argument")
+	return c.errors()
 }
 
 func (ts ThrowStatement) MarshalJSON() ([]byte, error) {
@@ -46,7 +48,7 @@ func (ts *ThrowStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ts.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ts.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ts.Type(), x.Type)
 	}
 	if err == nil {
 		ts.Loc = x.Loc
@@ -61,8 +63,8 @@ type TryStatement struct {
 	baseStatement
 	Loc       SourceLocation
 	Block     BlockStatement
-	Handler   CatchClause
-	Finalizer BlockStatement
+	Handler   CatchClause    // possibly zero
+	Finalizer BlockStatement // possibly zero, unless handler is zero
 }
 
 func (TryStatement) Type() string                { return "TryStatement" }
@@ -85,7 +87,15 @@ func (ts TryStatement) Walk(v Visitor) {
 }
 
 func (ts TryStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ts}
+	c.require(ts.Block, "try block")
+	c.optional(ts.Handler)
+	if ts.Handler.IsZero() {
+		c.require(ts.Finalizer, "catch or final block")
+	} else {
+		c.optional(ts.Finalizer)
+	}
+	return c.errors()
 }
 
 func (ts TryStatement) MarshalJSON() ([]byte, error) {
@@ -110,7 +120,7 @@ func (ts *TryStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ts.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ts.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ts.Type(), x.Type)
 	}
 	if err == nil {
 		ts.Loc, ts.Block, ts.Handler, ts.Finalizer =
@@ -147,7 +157,10 @@ func (cc CatchClause) Walk(v Visitor) {
 }
 
 func (cc CatchClause) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: cc}
+	c.require(cc.Param, "catch expression")
+	c.require(cc.Body, "catch block")
+	return c.errors()
 }
 
 func (cc CatchClause) MarshalJSON() ([]byte, error) {
@@ -166,7 +179,7 @@ func (cc *CatchClause) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != cc.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, cc.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, cc.Type(), x.Type)
 	}
 	if err == nil {
 		cc.Loc, cc.Body = x.Loc, x.Body

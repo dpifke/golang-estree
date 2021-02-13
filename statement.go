@@ -12,6 +12,7 @@ type Statement interface {
 }
 
 func unmarshalStatement(m json.RawMessage) (s Statement, match bool, err error) {
+	// TODO: coerce null/empty m into EmptyStatement?
 	var x struct {
 		Type string `json:"type"`
 	}
@@ -74,7 +75,7 @@ func unmarshalStatement(m json.RawMessage) (s Statement, match bool, err error) 
 			var fis ForInStatement
 			s, match, err = fis, true, json.Unmarshal(m, &fis)
 		default:
-			err = fmt.Errorf("%w: expected Statement, got %v", ErrWrongType, string(m))
+			err = fmt.Errorf("%w Statement, got %v", ErrWrongType, string(m))
 		}
 		if err != nil {
 			s = nil // don't return incomplete objects
@@ -117,7 +118,9 @@ func (es ExpressionStatement) Walk(v Visitor) {
 }
 
 func (es ExpressionStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: es}
+	c.require(es.Expression, "expression")
+	return c.errors()
 }
 
 func (es ExpressionStatement) MarshalJSON() ([]byte, error) {
@@ -134,7 +137,7 @@ func (es *ExpressionStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != es.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, es.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, es.Type(), x.Type)
 	}
 	if err == nil {
 		es.Loc = x.Loc
@@ -153,10 +156,7 @@ type BlockStatement struct {
 
 func (BlockStatement) Type() string                { return "BlockStatement" }
 func (bs BlockStatement) Location() SourceLocation { return bs.Loc }
-
-func (bs BlockStatement) IsZero() bool {
-	return false // an empty Body is non-zero
-}
+func (BlockStatement) IsZero() bool                { return false }
 
 func (bs BlockStatement) Walk(v Visitor) {
 	if v = v.Visit(bs); v != nil {
@@ -168,7 +168,12 @@ func (bs BlockStatement) Walk(v Visitor) {
 }
 
 func (bs BlockStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: bs}
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return bs.Body[i] },
+		Len:   len(bs.Body),
+	}, "statement")
+	return c.errors()
 }
 
 func (bs BlockStatement) MarshalJSON() ([]byte, error) {
@@ -185,7 +190,7 @@ func (bs *BlockStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != bs.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, bs.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, bs.Type(), x.Type)
 	}
 	if err == nil {
 		bs.Loc = x.Loc
@@ -210,10 +215,7 @@ type FunctionBody struct {
 
 func (FunctionBody) Type() string                { return BlockStatement{}.Type() }
 func (fb FunctionBody) Location() SourceLocation { return fb.Loc }
-
-func (fb FunctionBody) IsZero() bool {
-	return fb.Loc.IsZero() && len(fb.Body) == 0
-}
+func (FunctionBody) IsZero() bool                { return false }
 
 func (fb FunctionBody) Walk(v Visitor) {
 	if v = v.Visit(fb); v != nil {
@@ -225,7 +227,12 @@ func (fb FunctionBody) Walk(v Visitor) {
 }
 
 func (fb FunctionBody) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: fb}
+	c.requireEach(nodeSlice{
+		Index: func(i int) Node { return fb.Body[i] },
+		Len:   len(fb.Body),
+	}, "directive or statement")
+	return c.errors()
 }
 
 func (fb FunctionBody) MarshalJSON() ([]byte, error) {
@@ -242,7 +249,7 @@ func (fb *FunctionBody) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != fb.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, fb.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, fb.Type(), x.Type)
 	}
 	if err == nil {
 		fb.Loc = x.Loc
@@ -285,7 +292,7 @@ func (es *EmptyStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != es.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, es.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, es.Type(), x.Type)
 	}
 	if err == nil {
 		es.Loc = x.Loc
@@ -321,7 +328,7 @@ func (ds *DebuggerStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ds.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ds.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ds.Type(), x.Type)
 	}
 	if err == nil {
 		ds.Loc = x.Loc
@@ -359,7 +366,10 @@ func (ws WithStatement) Walk(v Visitor) {
 }
 
 func (ws WithStatement) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ws}
+	c.require(ws.Object, "with expression")
+	c.require(ws.Body, "with body")
+	return c.errors()
 }
 
 func (ws WithStatement) MarshalJSON() ([]byte, error) {
@@ -378,7 +388,7 @@ func (ws *WithStatement) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ws.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ws.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ws.Type(), x.Type)
 	}
 	if err == nil {
 		ws.Loc = x.Loc

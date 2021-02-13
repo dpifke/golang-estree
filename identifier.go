@@ -26,7 +26,12 @@ func (i Identifier) Walk(v Visitor) {
 }
 
 func (i Identifier) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: i}
+	if i.Name == "" {
+		c.appendf("%w empty identifier not allowed", ErrWrongValue)
+	}
+	// TODO: other validity checks?
+	return c.errors()
 }
 
 func (i Identifier) MarshalJSON() ([]byte, error) {
@@ -43,7 +48,7 @@ func (i *Identifier) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != i.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, i.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, i.Type(), x.Type)
 	}
 	if err == nil {
 		i.Loc, i.Name = x.Loc, x.Name

@@ -92,6 +92,8 @@ func (bo BinaryOperator) IsValid() bool {
 	return false
 }
 
+func (bo BinaryOperator) MinVersion() Version { return ES5 }
+
 // BinaryExpression is a binary (two operand) expression.
 type BinaryExpression struct {
 	baseExpression
@@ -102,6 +104,10 @@ type BinaryExpression struct {
 
 func (BinaryExpression) Type() string                { return "BinaryExpression" }
 func (be BinaryExpression) Location() SourceLocation { return be.Loc }
+
+func (be BinaryExpression) MinVersion() Version {
+	return be.Operator.MinVersion()
+}
 
 func (be BinaryExpression) IsZero() bool {
 	return be.Loc.IsZero() &&
@@ -123,7 +129,13 @@ func (be BinaryExpression) Walk(v Visitor) {
 }
 
 func (be BinaryExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: be}
+	c.require(be.Left, "left-hand expression")
+	if !be.Operator.IsValid() {
+		c.appendf("%w binary operator %q", ErrWrongValue, be.Operator)
+	}
+	c.require(be.Right, "right-hand expression")
+	return c.errors()
 }
 
 func (be BinaryExpression) MarshalJSON() ([]byte, error) {
@@ -144,14 +156,14 @@ func (be *BinaryExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != be.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, be.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, be.Type(), x.Type)
 	}
 	if err == nil {
 		be.Loc = x.Loc
 		if x.Operator.IsValid() {
 			be.Operator = x.Operator
 		} else {
-			err = fmt.Errorf("%w for BinaryExpression.Operator: %q", ErrWrongValue, x.Operator)
+			err = fmt.Errorf("%w BinaryExpression.Operator %q", ErrWrongValue, x.Operator)
 		}
 		var err2 error
 		if be.Left, _, err2 = unmarshalExpression(x.Left); err == nil && err2 != nil {
@@ -257,7 +269,13 @@ func (ae AssignmentExpression) Walk(v Visitor) {
 }
 
 func (ae AssignmentExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: ae}
+	c.require(ae.Left, "left-hand expression in assignment")
+	if !ae.Operator.IsValid() {
+		c.appendf("%w assignment operator %q", ErrWrongValue, ae.Operator)
+	}
+	c.require(ae.Right, "right-hand expression in assignment")
+	return c.errors()
 }
 
 func (ae AssignmentExpression) MarshalJSON() ([]byte, error) {
@@ -278,14 +296,14 @@ func (ae *AssignmentExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != ae.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, ae.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, ae.Type(), x.Type)
 	}
 	if err == nil {
 		ae.Loc = x.Loc
 		if x.Operator.IsValid() {
 			ae.Operator = x.Operator
 		} else {
-			err = fmt.Errorf("%w for AssignmentExpression.Operator: %q", ErrWrongValue, x.Operator)
+			err = fmt.Errorf("%w AssignmentExpression.Operator %q", ErrWrongValue, x.Operator)
 		}
 		var err2 error
 		if ae.Left, err2 = unmarshalPatternOrExpression(x.Left); err == nil && err2 != nil {
@@ -357,7 +375,13 @@ func (le LogicalExpression) Walk(v Visitor) {
 }
 
 func (le LogicalExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: le}
+	c.require(le.Left, "left-hand expression")
+	if !le.Operator.IsValid() {
+		c.appendf("%w logical operator %q", ErrWrongValue, le.Operator)
+	}
+	c.require(le.Right, "right-hand expression")
+	return c.errors()
 }
 
 func (le LogicalExpression) MarshalJSON() ([]byte, error) {
@@ -378,14 +402,14 @@ func (le *LogicalExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != le.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, le.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, le.Type(), x.Type)
 	}
 	if err == nil {
 		le.Loc = x.Loc
 		if x.Operator.IsValid() {
 			le.Operator = x.Operator
 		} else {
-			err = fmt.Errorf("%w for LogicalExpression.Operator: %q", ErrWrongValue, x.Operator)
+			err = fmt.Errorf("%w LogicalExpression.Operator %q", ErrWrongValue, x.Operator)
 		}
 		var err2 error
 		if le.Left, _, err2 = unmarshalExpression(x.Left); err == nil && err2 != nil {
@@ -435,7 +459,10 @@ func (me MemberExpression) Walk(v Visitor) {
 }
 
 func (me MemberExpression) Errors() []error {
-	return nil // TODO
+	c := nodeChecker{Node: me}
+	c.require(me.Object, "object in member expression")
+	c.require(me.Property, "property or index in member expression")
+	return c.errors()
 }
 
 func (me MemberExpression) MarshalJSON() ([]byte, error) {
@@ -456,7 +483,7 @@ func (me *MemberExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != me.Type() {
-		err = fmt.Errorf("%w: expected %q, got %q", ErrWrongType, me.Type(), x.Type)
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, me.Type(), x.Type)
 	}
 	if err == nil {
 		me.Loc, me.Computed = x.Loc, x.Computed
