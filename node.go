@@ -35,9 +35,9 @@ type Node interface {
 	// current Node is visited first, followed by each of its non-nil
 	// children, in the order defined by the ESTree grammar.
 	//
-	// Uninitialized Nodes will be visited, but it is recommended that they be
-	// treated the same as nil, but returning nil from Visitor.Visit if
-	// Node.IsZero is true.
+	// Uninitialized Nodes (those where IsZero returns true) will be visited,
+	// but it is recommended that the Visitor skip over them, as if they were
+	// nil.
 	Walk(Visitor)
 
 	// Errors checks that required fields of this Node are non-nil and
