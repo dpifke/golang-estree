@@ -124,13 +124,15 @@ func (BreakStatement) Errors() []error             { return nil }
 func (bs BreakStatement) Walk(v Visitor) {
 	if v = v.Visit(bs); v != nil {
 		defer v.Visit(nil)
-		bs.Label.Walk(v)
+		if !bs.Label.IsZero() {
+			bs.Label.Walk(v)
+		}
 	}
 }
 
 func (bs BreakStatement) MarshalJSON() ([]byte, error) {
 	x := nodeToMap(bs)
-	if bs.Label.Name != "" {
+	if !bs.Label.IsZero() {
 		x["label"] = bs.Label
 	}
 	return json.Marshal(x)
@@ -167,13 +169,15 @@ func (ContinueStatement) Errors() []error             { return nil }
 func (cs ContinueStatement) Walk(v Visitor) {
 	if v = v.Visit(cs); v != nil {
 		defer v.Visit(nil)
-		cs.Label.Walk(v)
+		if !cs.Label.IsZero() {
+			cs.Label.Walk(v)
+		}
 	}
 }
 
 func (cs ContinueStatement) MarshalJSON() ([]byte, error) {
 	x := nodeToMap(cs)
-	if cs.Label.Name != "" {
+	if !cs.Label.IsZero() {
 		x["label"] = cs.Label
 	}
 	return json.Marshal(x)

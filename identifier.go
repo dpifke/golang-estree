@@ -7,13 +7,16 @@ import (
 
 type Identifier struct {
 	basePattern
+	baseExpression
 	Loc  SourceLocation
 	Name string
 }
 
 func (Identifier) Type() string               { return "Identifier" }
 func (i Identifier) Location() SourceLocation { return i.Loc }
+func (Identifier) MinVersion() Version        { return ES5 }
 func (Identifier) isLiteralOrIdentifier()     {}
+func (Identifier) isPatternOrExpression()     {}
 
 func (i Identifier) IsZero() bool {
 	return i.Loc.IsZero() && i.Name == ""

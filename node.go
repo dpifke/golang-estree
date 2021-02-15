@@ -1,6 +1,7 @@
 package estree
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -159,4 +160,17 @@ type Visitor interface {
 	// The final Visit(nil) call is via defer, so it's possible for a Visitor
 	// to recover from a panic.
 	Visit(Node) Visitor
+}
+
+// VisitorFunc allows an ordinary function to be used as a Visitor.
+type VisitorFunc func(Node) Visitor
+
+func (f VisitorFunc) Visit(n Node) Visitor {
+	return f(n)
+}
+
+// isNullOrEmptyRawMessage is used when unmarshaling optional fields, to treat
+// null and missing values as equivalent.
+func isNullOrEmptyRawMessage(m json.RawMessage) bool {
+	return len(m) == 0 || bytes.Equal(m, []byte("null"))
 }

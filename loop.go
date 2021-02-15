@@ -213,21 +213,18 @@ func (fs *ForStatement) UnmarshalJSON(b []byte) error {
 	}
 	if err == nil && len(x.Init) > 0 {
 		fs.Loc = x.Loc
-		if len(x.Init) > 0 {
-			fs.Init, err = unmarshalVariableDeclarationOrExpression(x.Init)
-		}
+		fs.Init, err = unmarshalVariableDeclarationOrExpression(x.Init)
 		var err2 error
-		if len(x.Test) > 0 {
-			if fs.Test, _, err = unmarshalExpression(x.Test); err == nil && err2 != nil {
-				err = err2
-			}
+		fs.Test, _, err2 = unmarshalExpression(x.Test)
+		if err == nil && err2 != nil {
+			err = err2
 		}
-		if len(x.Update) > 0 {
-			if fs.Update, _, err = unmarshalExpression(x.Update); err == nil && err2 != nil {
-				err = err2
-			}
+		fs.Update, _, err2 = unmarshalExpression(x.Update)
+		if err == nil && err2 != nil {
+			err = err2
 		}
-		if fs.Body, _, err = unmarshalStatement(x.Body); err == nil && err2 != nil {
+		fs.Body, _, err2 = unmarshalStatement(x.Body)
+		if err == nil && err2 != nil {
 			err = err2
 		}
 	}

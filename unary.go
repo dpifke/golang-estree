@@ -62,6 +62,7 @@ func (ue UnaryExpression) Location() SourceLocation { return ue.Loc }
 func (ue UnaryExpression) IsZero() bool {
 	return ue.Loc.IsZero() &&
 		ue.Operator == "" &&
+		!ue.Prefix &&
 		(ue.Argument == nil || ue.Argument.IsZero())
 }
 
@@ -165,7 +166,8 @@ func (ue UpdateExpression) Location() SourceLocation { return ue.Loc }
 func (ue UpdateExpression) IsZero() bool {
 	return ue.Loc.IsZero() &&
 		ue.Operator == "" &&
-		(ue.Argument == nil || ue.Argument.IsZero())
+		(ue.Argument == nil || ue.Argument.IsZero()) &&
+		!ue.Prefix
 }
 
 func (ue UpdateExpression) Walk(v Visitor) {

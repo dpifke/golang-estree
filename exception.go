@@ -72,9 +72,9 @@ func (ts TryStatement) Location() SourceLocation { return ts.Loc }
 
 func (ts TryStatement) IsZero() bool {
 	return ts.Loc.IsZero() &&
-		ts.Block.IsZero() &&
+		(ts.Block.Loc.IsZero() && len(ts.Block.Body) == 0) &&
 		ts.Handler.IsZero() &&
-		ts.Finalizer.IsZero()
+		(ts.Finalizer.Loc.IsZero() && len(ts.Finalizer.Body) == 0)
 }
 
 func (ts TryStatement) Walk(v Visitor) {
@@ -88,13 +88,12 @@ func (ts TryStatement) Walk(v Visitor) {
 
 func (ts TryStatement) Errors() []error {
 	c := nodeChecker{Node: ts}
-	c.require(ts.Block, "try block")
+	c.optional(ts.Block)
 	c.optional(ts.Handler)
-	if ts.Handler.IsZero() {
-		c.require(ts.Finalizer, "catch or final block")
-	} else {
-		c.optional(ts.Finalizer)
+	if ts.Handler.IsZero() && ts.Finalizer.Loc.IsZero() && len(ts.Finalizer.Body) == 0 {
+		c.appendf("%w catch or final block", ErrMissingNode)
 	}
+	c.optional(ts.Finalizer)
 	return c.errors()
 }
 
@@ -104,7 +103,7 @@ func (ts TryStatement) MarshalJSON() ([]byte, error) {
 	if !ts.Handler.IsZero() {
 		x["handler"] = ts.Handler
 	}
-	if !ts.Finalizer.IsZero() {
+	if !ts.Finalizer.Loc.IsZero() || len(ts.Finalizer.Body) > 0 {
 		x["finalizer"] = ts.Finalizer
 	}
 	return json.Marshal(x)
@@ -143,7 +142,7 @@ func (CatchClause) MinVersion() Version         { return ES5 }
 func (cc CatchClause) IsZero() bool {
 	return cc.Loc.IsZero() &&
 		(cc.Param == nil || cc.Param.IsZero()) &&
-		cc.Body.IsZero()
+		(cc.Body.Loc.IsZero() && len(cc.Body.Body) == 0)
 }
 
 func (cc CatchClause) Walk(v Visitor) {

@@ -18,54 +18,62 @@ type Expression interface {
 }
 
 func unmarshalExpression(m json.RawMessage) (e Expression, match bool, err error) {
+	if isNullOrEmptyRawMessage(m) {
+		return nil, true, nil
+	}
 	var x struct {
 		Type string `json:"type"`
 	}
 	if err = json.Unmarshal(m, &x); err == nil {
 		switch x.Type {
 		case ThisExpression{}.Type():
-			e, match = ThisExpression{}, true
+			match, e = true, ThisExpression{}
 		case ArrayExpression{}.Type():
 			var ae ArrayExpression
-			e, match, err = ae, true, json.Unmarshal(m, &ae)
+			err, match, e = json.Unmarshal(m, &ae), true, ae
 		case ObjectExpression{}.Type():
 			var oe ObjectExpression
-			e, match, err = oe, true, json.Unmarshal(m, &oe)
+			err, match, e = json.Unmarshal(m, &oe), true, oe
 		case FunctionExpression{}.Type():
 			var fe FunctionExpression
-			e, match, err = fe, true, json.Unmarshal(m, &fe)
+			err, match, e = json.Unmarshal(m, &fe), true, fe
 		case UnaryExpression{}.Type():
 			var ue UnaryExpression
-			e, match, err = ue, true, json.Unmarshal(m, &ue)
+			err, match, e = json.Unmarshal(m, &ue), true, ue
 		case UpdateExpression{}.Type():
 			var ue UpdateExpression
-			e, match, err = ue, true, json.Unmarshal(m, &ue)
+			err, match, e = json.Unmarshal(m, &ue), true, ue
 		case BinaryExpression{}.Type():
 			var be BinaryExpression
-			e, match, err = be, true, json.Unmarshal(m, &be)
+			err, match, e = json.Unmarshal(m, &be), true, be
 		case AssignmentExpression{}.Type():
 			var ae AssignmentExpression
-			e, match, err = ae, true, json.Unmarshal(m, &ae)
+			err, match, e = json.Unmarshal(m, &ae), true, ae
 		case LogicalExpression{}.Type():
 			var le LogicalExpression
-			e, match, err = le, true, json.Unmarshal(m, &le)
+			err, match, e = json.Unmarshal(m, &le), true, le
 		case MemberExpression{}.Type():
 			var me MemberExpression
-			e, match, err = me, true, json.Unmarshal(m, &me)
+			err, match, e = json.Unmarshal(m, &me), true, me
 		case ConditionalExpression{}.Type():
 			var ce ConditionalExpression
-			e, match, err = ce, true, json.Unmarshal(m, &ce)
+			err, match, e = json.Unmarshal(m, &ce), true, ce
 		case CallExpression{}.Type():
 			var ce CallExpression
-			e, match, err = ce, true, json.Unmarshal(m, &ce)
+			err, match, e = json.Unmarshal(m, &ce), true, ce
 		case NewExpression{}.Type():
 			var ne NewExpression
-			e, match, err = ne, true, json.Unmarshal(m, &ne)
+			err, match, e = json.Unmarshal(m, &ne), true, ne
 		case SequenceExpression{}.Type():
 			var se SequenceExpression
-			e, match, err = se, true, json.Unmarshal(m, &se)
+			err, match, e = json.Unmarshal(m, &se), true, se
+		case Identifier{}.Type():
+			var i Identifier
+			err, match, e = json.Unmarshal(m, &i), true, i
 		default:
-			err = fmt.Errorf("%w Expression, got %v", ErrWrongType, string(m))
+			if e, match, err = unmarshalLiteral(m); !match {
+				err = fmt.Errorf("%w Expression, got %v", ErrWrongType, string(m))
+			}
 		}
 		if err != nil {
 			e = nil // don't return incomplete nodes
@@ -196,15 +204,19 @@ func (ae *ArrayExpression) UnmarshalJSON(b []byte) error {
 	}
 	if err == nil {
 		ae.Loc = x.Loc
-		ae.Elements = make([]ExpressionOrArrayHole, len(x.Elements))
-		for i := range x.Elements {
-			if isNullOrEmptyRawMessage(x.Elements[i]) {
-				ae.Elements[i] = ArrayHole{}
-			} else {
-				var err2 error
-				ae.Elements[i], _, err2 = unmarshalExpression(x.Elements[i])
-				if err == nil && err2 != nil {
-					err = err2
+		if len(x.Elements) == 0 {
+			ae.Elements = nil
+		} else {
+			ae.Elements = make([]ExpressionOrArrayHole, len(x.Elements))
+			for i := range x.Elements {
+				if isNullOrEmptyRawMessage(x.Elements[i]) {
+					ae.Elements[i] = ArrayHole{}
+				} else {
+					var err2 error
+					ae.Elements[i], _, err2 = unmarshalExpression(x.Elements[i])
+					if err == nil && err2 != nil {
+						err = err2
+					}
 				}
 			}
 		}
@@ -255,8 +267,10 @@ func (oe *ObjectExpression) UnmarshalJSON(b []byte) error {
 	}
 	err := json.Unmarshal(b, &x)
 	if err == nil && x.Type != oe.Type() {
-		oe.Loc, oe.Properties = x.Loc, x.Properties
 		err = fmt.Errorf("%w %s, got %q", ErrWrongType, oe.Type(), x.Type)
+	}
+	if err == nil {
+		oe.Loc, oe.Properties = x.Loc, x.Properties
 	}
 	return err
 }
@@ -374,7 +388,7 @@ func (p *Property) UnmarshalJSON(b []byte) error {
 type FunctionExpression struct {
 	baseExpression
 	Loc    SourceLocation
-	ID     Identifier // or nil
+	ID     Identifier // possibly zero
 	Params []Pattern
 	Body   FunctionBody
 }
@@ -386,12 +400,18 @@ func (fe FunctionExpression) IsZero() bool {
 	return fe.Loc.IsZero() &&
 		fe.ID.IsZero() &&
 		len(fe.Params) == 0 &&
-		fe.Body.IsZero()
+		len(fe.Body.Body) == 0
 }
 
 func (fe FunctionExpression) Walk(v Visitor) {
 	if v = v.Visit(fe); v != nil {
-		v.Visit(nil)
+		defer v.Visit(nil)
+		for _, p := range fe.Params {
+			if p != nil {
+				p.Walk(v)
+			}
+		}
+		fe.Body.Walk(v)
 	}
 }
 
@@ -511,10 +531,10 @@ func (ce *ConditionalExpression) UnmarshalJSON(b []byte) error {
 		ce.Loc = x.Loc
 		ce.Test, _, err = unmarshalExpression(x.Test)
 		var err2 error
-		if ce.Alternate, _, err2 = unmarshalExpression(x.Alternate); err == nil && err2 != nil {
+		if ce.Consequent, _, err = unmarshalExpression(x.Consequent); err == nil && err2 != nil {
 			err = err2
 		}
-		if ce.Consequent, _, err = unmarshalExpression(x.Consequent); err == nil && err2 != nil {
+		if ce.Alternate, _, err2 = unmarshalExpression(x.Alternate); err == nil && err2 != nil {
 			err = err2
 		}
 	}
@@ -564,8 +584,10 @@ func (ce CallExpression) Errors() []error {
 func (ce CallExpression) MarshalJSON() ([]byte, error) {
 	x := nodeToMap(ce)
 	x["callee"] = ce.Callee
-	x["arguments"] = ce.Arguments
-	return json.Marshal(ce)
+	if len(ce.Arguments) > 0 {
+		x["arguments"] = ce.Arguments
+	}
+	return json.Marshal(x)
 }
 
 func (ce *CallExpression) UnmarshalJSON(b []byte) error {
@@ -582,12 +604,16 @@ func (ce *CallExpression) UnmarshalJSON(b []byte) error {
 	if err == nil {
 		ce.Loc = x.Loc
 		ce.Callee, _, err = unmarshalExpression(x.Callee)
-	}
-	if err == nil {
-		ce.Arguments = make([]Expression, len(x.Arguments))
-		for i := range x.Arguments {
-			if ce.Arguments[i], _, err = unmarshalExpression(x.Arguments[i]); err != nil {
-				break
+		if len(x.Arguments) == 0 {
+			ce.Arguments = nil
+		} else {
+			ce.Arguments = make([]Expression, len(x.Arguments))
+			for i := range x.Arguments {
+				var err2 error
+				ce.Arguments[i], _, err2 = unmarshalExpression(x.Arguments[i])
+				if err == nil && err2 != nil {
+					err = err2
+				}
 			}
 		}
 	}
@@ -652,11 +678,16 @@ func (ne *NewExpression) UnmarshalJSON(b []byte) error {
 	}
 	if err == nil {
 		ne.Callee, _, err = unmarshalExpression(x.Callee)
-		ne.Arguments = make([]Expression, len(x.Arguments))
-		for i := range x.Arguments {
-			var err2 error
-			if ne.Arguments[i], _, err2 = unmarshalExpression(x.Arguments[i]); err == nil && err2 != nil {
-				err = err2
+		if len(x.Arguments) == 0 {
+			ne.Arguments = nil
+		} else {
+			ne.Arguments = make([]Expression, len(x.Arguments))
+			for i := range x.Arguments {
+				var err2 error
+				ne.Arguments[i], _, err2 = unmarshalExpression(x.Arguments[i])
+				if err == nil && err2 != nil {
+					err = err2
+				}
 			}
 		}
 	}
@@ -713,11 +744,16 @@ func (se *SequenceExpression) UnmarshalJSON(b []byte) error {
 	}
 	if err == nil {
 		se.Loc = x.Loc
-		se.Expressions = make([]Expression, len(x.Expressions))
-		for i := range x.Expressions {
-			var err2 error
-			if se.Expressions[i], _, err2 = unmarshalExpression(x.Expressions[i]); err == nil && err2 != nil {
-				err = err2
+		if len(x.Expressions) == 0 {
+			se.Expressions = nil
+		} else {
+			se.Expressions = make([]Expression, len(x.Expressions))
+			for i := range x.Expressions {
+				var err2 error
+				se.Expressions[i], _, err2 = unmarshalExpression(x.Expressions[i])
+				if err == nil && err2 != nil {
+					err = err2
+				}
 			}
 		}
 	}

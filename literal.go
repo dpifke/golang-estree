@@ -19,32 +19,32 @@ func unmarshalLiteral(m json.RawMessage) (l Literal, match bool, err error) {
 		Type  string         `json:"type"`
 		Loc   SourceLocation `json:"loc"`
 		Value interface{}    `json:"value"`
+		Regex struct {
+			Pattern string `json:"pattern"`
+			Flags   string `json:"flags"`
+		} `json:"regex"`
 	}
 	if err = json.Unmarshal(m, &x); err != nil {
 		match = true
+	} else if x.Type != (baseLiteral{}).Type() {
+		err = fmt.Errorf("%w %s, got %q", ErrWrongType, baseLiteral{}.Type(), x.Type)
+	} else if x.Regex.Pattern != "" || x.Regex.Flags != "" {
+		match = true
+		l = RegExpLiteral{Loc: x.Loc, Pattern: x.Regex.Pattern, Flags: x.Regex.Flags}
+		// TODO: complain if Value is non-nil?
 	} else {
-		if x.Type == (baseLiteral{}).Type() {
-			switch v := x.Value.(type) {
-			case string:
-				l, match = StringLiteral{Loc: x.Loc, Value: v}, true
-			case bool:
-				l, match = BoolLiteral{Loc: x.Loc, Value: v}, true
-			case nil:
-				l, match = NullLiteral{Loc: x.Loc}, true
-			case float64:
-				l, match = NumberLiteral{Loc: x.Loc, Value: v}, true
-			default:
-				var re RegExpLiteral
-				if err = json.Unmarshal([]byte(m), &re); err == nil {
-					l, match = re, true
-				} else if !errors.Is(err, ErrWrongType) {
-					match = true
-				} else {
-					err = nil
-				}
-			}
-		} else {
-			err = fmt.Errorf("%w %s, got %q", ErrWrongType, baseLiteral{}.Type(), x.Type)
+		match = true
+		switch v := x.Value.(type) {
+		case string:
+			l = StringLiteral{Loc: x.Loc, Value: v}
+		case bool:
+			l = BoolLiteral{Loc: x.Loc, Value: v}
+		case nil:
+			l = NullLiteral{Loc: x.Loc}
+		case float64:
+			l = NumberLiteral{Loc: x.Loc, Value: v}
+		default:
+			err = fmt.Errorf("%w string, bool, null, number, or regexp got %v", ErrWrongType, v)
 		}
 	}
 	return
@@ -180,23 +180,4 @@ func (rel RegExpLiteral) MarshalJSON() ([]byte, error) {
 		"flags":   rel.Flags,
 	}
 	return json.Marshal(x)
-}
-
-func (rel *RegExpLiteral) UnmarshalJSON(b []byte) error {
-	var x struct {
-		Type  string         `json:"type"`
-		Loc   SourceLocation `json:"loc"`
-		Regex struct {
-			Pattern string `json:"pattern"`
-			Flags   string `json:"flags"`
-		} `json:"regex"`
-	}
-	err := json.Unmarshal(b, &x)
-	if err == nil && x.Type != rel.Type() {
-		err = fmt.Errorf("%w %s, got %q", ErrWrongType, rel.Type(), x.Type)
-	}
-	if err == nil {
-		rel.Loc, rel.Pattern, rel.Flags = x.Loc, x.Regex.Pattern, x.Regex.Flags
-	}
-	return err
 }

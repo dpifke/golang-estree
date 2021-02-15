@@ -77,10 +77,8 @@ func (is *IfStatement) UnmarshalJSON(b []byte) error {
 		if is.Consequent, _, err2 = unmarshalStatement(x.Consequent); err == nil && err2 != nil {
 			err = err2
 		}
-		if isNullOrEmptyRawMessage(x.Alternate) {
-			if is.Alternate, _, err2 = unmarshalStatement(x.Alternate); err == nil && err2 != nil {
-				err = err2
-			}
+		if is.Alternate, _, err2 = unmarshalStatement(x.Alternate); err == nil && err2 != nil {
+			err = err2
 		}
 	}
 	return err
@@ -101,7 +99,7 @@ func (ss SwitchStatement) Location() SourceLocation { return ss.Loc }
 func (ss SwitchStatement) IsZero() bool {
 	return ss.Loc.IsZero() &&
 		(ss.Discriminant == nil || ss.Discriminant.IsZero()) &&
-		len(ss.Cases) > 0
+		len(ss.Cases) == 0
 }
 
 func (ss SwitchStatement) Walk(v Visitor) {
@@ -125,7 +123,9 @@ func (ss SwitchStatement) Errors() []error {
 func (ss SwitchStatement) MarshalJSON() ([]byte, error) {
 	x := nodeToMap(ss)
 	x["test"] = ss.Discriminant
-	x["cases"] = ss.Cases
+	if len(ss.Cases) > 0 {
+		x["cases"] = ss.Cases
+	}
 	return json.Marshal(x)
 }
 
@@ -165,7 +165,7 @@ func (SwitchCase) IsZero() bool                { return false }
 func (sc SwitchCase) Walk(v Visitor) {
 	if v = v.Visit(sc); v != nil {
 		defer v.Visit(nil)
-		if sc.Test != nil {
+		if sc.Test != nil && !sc.Test.IsZero() {
 			sc.Test.Walk(v)
 		}
 		for _, c := range sc.Consequent {
@@ -208,15 +208,19 @@ func (sc *SwitchCase) UnmarshalJSON(b []byte) error {
 	if err == nil && x.Type != sc.Type() {
 		err = fmt.Errorf("%w %s, got %q", ErrWrongType, sc.Type(), x.Type)
 	}
-	if err == nil && len(x.Test) > 0 {
+	if err == nil {
 		sc.Loc = x.Loc
 		sc.Test, _, err = unmarshalExpression(x.Test)
-		sc.Consequent = make([]Statement, len(x.Consequent))
-		for i := range x.Consequent {
-			var err2 error
-			sc.Consequent[i], _, err2 = unmarshalStatement(x.Consequent[i])
-			if err == nil && err2 != nil {
-				err = err2
+		if len(x.Consequent) == 0 {
+			sc.Consequent = nil
+		} else {
+			sc.Consequent = make([]Statement, len(x.Consequent))
+			for i := range x.Consequent {
+				var err2 error
+				sc.Consequent[i], _, err2 = unmarshalStatement(x.Consequent[i])
+				if err == nil && err2 != nil {
+					err = err2
+				}
 			}
 		}
 	}

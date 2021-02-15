@@ -12,7 +12,9 @@ type Statement interface {
 }
 
 func unmarshalStatement(m json.RawMessage) (s Statement, match bool, err error) {
-	// TODO: coerce null/empty m into EmptyStatement?
+	if isNullOrEmptyRawMessage(m) {
+		return nil, true, nil
+	}
 	var x struct {
 		Type string `json:"type"`
 	}
@@ -22,58 +24,64 @@ func unmarshalStatement(m json.RawMessage) (s Statement, match bool, err error) 
 		switch x.Type {
 		case ExpressionStatement{}.Type():
 			var es ExpressionStatement
-			s, match, err = es, true, json.Unmarshal(m, &es)
+			err, match, s = json.Unmarshal(m, &es), true, es
 		case BlockStatement{}.Type():
 			var bs BlockStatement
-			s, match, err = bs, true, json.Unmarshal(m, &bs)
+			err, match, s = json.Unmarshal(m, &bs), true, bs
 		case FunctionBody{}.Type():
 			var fb FunctionBody
-			s, match, err = fb, true, json.Unmarshal(m, &fb)
+			err, match, s = json.Unmarshal(m, &fb), true, fb
 		case EmptyStatement{}.Type():
 			var es EmptyStatement
-			s, match, err = es, true, json.Unmarshal(m, &es)
+			err, match, s = json.Unmarshal(m, &es), true, es
 		case DebuggerStatement{}.Type():
 			var ds DebuggerStatement
-			s, match, err = ds, true, json.Unmarshal(m, &ds)
+			err, match, s = json.Unmarshal(m, &ds), true, ds
 		case WithStatement{}.Type():
 			var ws WithStatement
-			s, match, err = ws, true, json.Unmarshal(m, &ws)
+			err, match, s = json.Unmarshal(m, &ws), true, ws
 		case ReturnStatement{}.Type():
 			var rs ReturnStatement
-			s, match, err = rs, true, json.Unmarshal(m, &rs)
+			err, match, s = json.Unmarshal(m, &rs), true, rs
 		case LabeledStatement{}.Type():
 			var ls LabeledStatement
-			s, match, err = ls, true, json.Unmarshal(m, &ls)
+			err, match, s = json.Unmarshal(m, &ls), true, ls
 		case BreakStatement{}.Type():
 			var bs BreakStatement
-			s, match, err = bs, true, json.Unmarshal(m, &bs)
+			err, match, s = json.Unmarshal(m, &bs), true, bs
 		case ContinueStatement{}.Type():
 			var cs ContinueStatement
-			s, match, err = cs, true, json.Unmarshal(m, &cs)
+			err, match, s = json.Unmarshal(m, &cs), true, cs
 		case IfStatement{}.Type():
 			var is IfStatement
-			s, match, err = is, true, json.Unmarshal(m, &is)
+			err, match, s = json.Unmarshal(m, &is), true, is
 		case SwitchStatement{}.Type():
 			var ss SwitchStatement
-			s, match, err = ss, true, json.Unmarshal(m, &ss)
+			err, match, s = json.Unmarshal(m, &ss), true, ss
 		case ThrowStatement{}.Type():
 			var ts ThrowStatement
-			s, match, err = ts, true, json.Unmarshal(m, &ts)
+			err, match, s = json.Unmarshal(m, &ts), true, ts
 		case TryStatement{}.Type():
 			var ts TryStatement
-			s, match, err = ts, true, json.Unmarshal(m, &ts)
+			err, match, s = json.Unmarshal(m, &ts), true, ts
 		case WhileStatement{}.Type():
 			var ws WhileStatement
-			s, match, err = ws, true, json.Unmarshal(m, &ws)
+			err, match, s = json.Unmarshal(m, &ws), true, ws
 		case DoWhileStatement{}.Type():
 			var dws DoWhileStatement
-			s, match, err = dws, true, json.Unmarshal(m, &dws)
+			err, match, s = json.Unmarshal(m, &dws), true, dws
 		case ForStatement{}.Type():
 			var fs ForStatement
-			s, match, err = fs, true, json.Unmarshal(m, &fs)
+			err, match, s = json.Unmarshal(m, &fs), true, fs
 		case ForInStatement{}.Type():
 			var fis ForInStatement
-			s, match, err = fis, true, json.Unmarshal(m, &fis)
+			err, match, s = json.Unmarshal(m, &fis), true, fis
+		case FunctionDeclaration{}.Type():
+			var fd FunctionDeclaration
+			err, match, s = json.Unmarshal(m, &fd), true, fd
+		case VariableDeclaration{}.Type():
+			var vd VariableDeclaration
+			err, match, s = json.Unmarshal(m, &vd), true, vd
 		default:
 			err = fmt.Errorf("%w Statement, got %v", ErrWrongType, string(m))
 		}
@@ -194,11 +202,16 @@ func (bs *BlockStatement) UnmarshalJSON(b []byte) error {
 	}
 	if err == nil {
 		bs.Loc = x.Loc
-		bs.Body = make([]Statement, len(x.Body))
-		for i := range x.Body {
-			var err2 error
-			if bs.Body[i], _, err2 = unmarshalStatement(x.Body[i]); err == nil && err2 != nil {
-				err = err2
+		if len(x.Body) == 0 {
+			bs.Body = nil
+		} else {
+			bs.Body = make([]Statement, len(x.Body))
+			for i := range x.Body {
+				var err2 error
+				bs.Body[i], _, err2 = unmarshalStatement(x.Body[i])
+				if err == nil && err2 != nil {
+					err = err2
+				}
 			}
 		}
 	}
@@ -232,6 +245,7 @@ func (fb FunctionBody) Errors() []error {
 		Index: func(i int) Node { return fb.Body[i] },
 		Len:   len(fb.Body),
 	}, "directive or statement")
+	// TODO: verify directives appear before statements?
 	return c.errors()
 }
 
@@ -253,11 +267,16 @@ func (fb *FunctionBody) UnmarshalJSON(b []byte) error {
 	}
 	if err == nil {
 		fb.Loc = x.Loc
-		fb.Body = make([]DirectiveOrStatement, len(x.Body))
-		for i := range x.Body {
-			var err2 error
-			if fb.Body[i], err2 = unmarshalDirectiveOrStatement(x.Body[i]); err == nil && err2 != nil {
-				err = err2
+		if len(x.Body) == 0 {
+			fb.Body = nil
+		} else {
+			fb.Body = make([]DirectiveOrStatement, len(x.Body))
+			for i := range x.Body {
+				var err2 error
+				fb.Body[i], err2 = unmarshalDirectiveOrStatement(x.Body[i])
+				if err == nil && err2 != nil {
+					err = err2
+				}
 			}
 		}
 	}

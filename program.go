@@ -59,7 +59,9 @@ func (p Program) Errors() []error {
 
 func (p Program) MarshalJSON() ([]byte, error) {
 	x := nodeToMap(p)
-	x["body"] = p.Body
+	if len(p.Body) > 0 {
+		x["body"] = p.Body
+	}
 	return json.Marshal(x)
 }
 
@@ -75,11 +77,16 @@ func (p *Program) UnmarshalJSON(b []byte) error {
 	}
 	if err == nil {
 		p.Loc = x.Loc
-		p.Body = make([]DirectiveOrStatement, len(x.Body))
-		for i := range x.Body {
-			var err2 error
-			if p.Body[i], err2 = unmarshalDirectiveOrStatement(x.Body[i]); err == nil && err2 != nil {
-				err = err2
+		if len(x.Body) == 0 {
+			p.Body = nil
+		} else {
+			p.Body = make([]DirectiveOrStatement, len(x.Body))
+			for i := range x.Body {
+				var err2 error
+				p.Body[i], err2 = unmarshalDirectiveOrStatement(x.Body[i])
+				if err == nil && err2 != nil {
+					err = err2
+				}
 			}
 		}
 	}

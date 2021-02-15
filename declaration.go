@@ -37,13 +37,17 @@ func (fd FunctionDeclaration) IsZero() bool {
 	return fd.Loc.IsZero() &&
 		fd.ID.IsZero() &&
 		len(fd.Params) == 0 &&
-		fd.Body.IsZero()
+		len(fd.Body.Body) == 0
 }
 
 func (fd FunctionDeclaration) Walk(v Visitor) {
 	if v = v.Visit(fd); v != nil {
 		defer v.Visit(nil)
 		fd.ID.Walk(v)
+		for _, p := range fd.Params {
+			p.Walk(v)
+		}
+		fd.Body.Walk(v)
 	}
 }
 
@@ -88,12 +92,16 @@ func (fd *FunctionDeclaration) UnmarshalJSON(b []byte) error {
 	}
 	if err == nil {
 		fd.Loc, fd.ID, fd.Body = x.Loc, x.ID, x.Body
-		fd.Params = make([]Pattern, len(x.Params))
-		for i := range x.Params {
-			var err2 error
-			fd.Params[i], _, err2 = unmarshalPattern(x.Params[i])
-			if err == nil && err2 != nil {
-				err = err2
+		if len(x.Params) == 0 {
+			fd.Params = nil
+		} else {
+			fd.Params = make([]Pattern, len(x.Params))
+			for i := range x.Params {
+				var err2 error
+				fd.Params[i], _, err2 = unmarshalPattern(x.Params[i])
+				if err == nil && err2 != nil {
+					err = err2
+				}
 			}
 		}
 	}
@@ -217,7 +225,7 @@ func (vd VariableDeclaration) Errors() []error {
 func (vd VariableDeclaration) MarshalJSON() ([]byte, error) {
 	x := nodeToMap(vd)
 	x["declarations"] = vd.Declarations
-	x["kind"] = vd
+	x["kind"] = vd.Kind
 	return json.Marshal(x)
 }
 
@@ -301,11 +309,10 @@ func (vd *VariableDeclarator) UnmarshalJSON(b []byte) error {
 	if err == nil {
 		vd.Loc = x.Loc
 		vd.ID, _, err = unmarshalPattern(x.ID)
-		if len(x.Init) > 0 {
-			var err2 error
-			if vd.Init, _, err2 = unmarshalExpression(x.Init); err == nil && err2 != nil {
-				err = err2
-			}
+		var err2 error
+		vd.Init, _, err2 = unmarshalExpression(x.Init)
+		if err == nil && err2 != nil {
+			err = err2
 		}
 	}
 	return err
